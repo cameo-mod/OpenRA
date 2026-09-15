@@ -391,6 +391,7 @@ namespace OpenRA
 		public int MouseScrollDeadzone = 8;
 
 		public bool UseAlternateScrollButton = false;
+		public bool AttackMoveIsDefault = false;
 
 		public bool HideReplayChat = false;
 

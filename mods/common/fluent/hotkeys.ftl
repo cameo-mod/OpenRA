@@ -98,6 +98,7 @@ hotkey-description-togglemute = Toggle audio mute
 hotkey-description-toggleplayerstancecolor = Toggle relationship colors
 hotkey-description-takescreenshot = Take screenshot
 hotkey-description-attackmove = Attack Move
+hotkey-description-attackmove-as-move = Move
 hotkey-description-stop = Stop
 hotkey-description-scatter = Scatter
 hotkey-description-deploy = Deploy
