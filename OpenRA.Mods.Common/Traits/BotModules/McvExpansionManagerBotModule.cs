@@ -24,17 +24,17 @@ namespace OpenRA.Mods.Common.Traits
 	public class McvExpansionManagerBotModuleInfo : ConditionalTraitInfo, Requires<ResourceMapBotModuleInfo>, NotBefore<ResourceMapBotModuleInfo>
 	{
 		[Desc("Actor types that are considered MCVs (deploy into base builders).")]
-		public readonly FrozenSet<string> McvTypes = FrozenSet<string>.Empty;
+		public readonly FrozenSet<string> McvTypes = [];
 
 		[Desc("MCV types that may be produced to satisfy the construction-yard quota.",
 			"Leave empty to use McvTypes.")]
 		public readonly FrozenSet<string> ConstructionMcvTypes = FrozenSet<string>.Empty;
 
 		[Desc("Actor types that are considered construction yards (base builders).")]
-		public readonly FrozenSet<string> ConstructionYardTypes = FrozenSet<string>.Empty;
+		public readonly FrozenSet<string> ConstructionYardTypes = [];
 
 		[Desc("Actor types that are able to produce MCVs.")]
-		public readonly FrozenSet<string> McvFactoryTypes = FrozenSet<string>.Empty;
+		public readonly FrozenSet<string> McvFactoryTypes = [];
 
 		[Desc("Try to maintain at least this many ConstructionYardTypes, build an MCV if number is below this.")]
 		public readonly int MinimumConstructionYardCount = 1;

@@ -15,6 +15,7 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
 
@@ -67,7 +68,7 @@ namespace OpenRA.Mods.Common.Graphics
 		protected class SpriteReservation
 		{
 			public int Token;
-			public float3 Offset;
+			public Vector3 Offset;
 			public bool FlipX;
 			public bool FlipY;
 			public float ZRamp;
@@ -113,7 +114,7 @@ namespace OpenRA.Mods.Common.Graphics
 		protected static readonly SpriteSequenceField<string> ButtonLabelField = new(nameof(ButtonLabel), null);
 		protected static readonly SpriteSequenceField<string> ButtonLabelFontField = new(nameof(ButtonLabelFont), null);
 		[Desc("Offset applied to the button label bar in pixels.")]
-		protected static readonly SpriteSequenceField<float2> ButtonLabelOffsetField = new(nameof(ButtonLabelOffset), float2.Zero);
+		protected static readonly SpriteSequenceField<Vector2> ButtonLabelOffsetField = new(nameof(ButtonLabelOffset), Vector2.Zero);
 		protected int tick;
 
 		[Desc("The total number of facings for the sequence. " +
@@ -160,7 +161,7 @@ namespace OpenRA.Mods.Common.Graphics
 		protected static readonly SpriteSequenceField<bool> FlipY = new(nameof(FlipY), false);
 
 		[Desc("Change the position in-game on X, Y, Z.")]
-		protected static readonly SpriteSequenceField<float3> Offset = new(nameof(Offset), float3.Zero);
+		protected static readonly SpriteSequenceField<Vector3> Offset = new(nameof(Offset), Vector3.Zero);
 
 		[Desc("Apply an OpenGL/Photoshop inspired blend mode.")]
 		protected static readonly SpriteSequenceField<BlendMode> BlendMode = new(nameof(BlendMode), OpenRA.BlendMode.Alpha);
@@ -182,7 +183,7 @@ namespace OpenRA.Mods.Common.Graphics
 		protected static readonly SpriteSequenceField<int> DepthSpriteFrame = new(nameof(DepthSpriteFrame), 0);
 
 		[Desc("X, Y offset to apply to the depth sprite.")]
-		protected static readonly SpriteSequenceField<float2> DepthSpriteOffset = new(nameof(DepthSpriteOffset), float2.Zero);
+		protected static readonly SpriteSequenceField<Vector2> DepthSpriteOffset = new(nameof(DepthSpriteOffset), Vector2.Zero);
 
 		protected static readonly MiniYaml NoData = new(null);
 		protected static readonly ImmutableArray<int> FirstFrame = [0];
@@ -208,7 +209,7 @@ namespace OpenRA.Mods.Common.Graphics
 		protected ProductionButtonStyle buttonStyle;
 		protected string buttonLabel;
 		protected string buttonLabelFont;
-		protected float2 buttonLabelOffset;
+		protected Vector2 buttonLabelOffset;
 
 		protected int zOffset;
 		protected int shadowZOffset;
@@ -219,7 +220,7 @@ namespace OpenRA.Mods.Common.Graphics
 		protected Rectangle? bounds;
 
 		protected int? depthSpriteReservation;
-		protected float2 depthSpriteOffset;
+		protected Vector2 depthSpriteOffset;
 
 		protected void ThrowIfUnresolved()
 		{
@@ -257,7 +258,7 @@ namespace OpenRA.Mods.Common.Graphics
 		public ProductionButtonStyle ButtonStyle => buttonStyle;
 		public string ButtonLabel => buttonLabel;
 		public string ButtonLabelFont => buttonLabelFont;
-		public float2 ButtonLabelOffset => buttonLabelOffset;
+		public Vector2 ButtonLabelOffset => buttonLabelOffset;
 
 
 		protected static T LoadField<T>(string key, T fallback, MiniYaml data, MiniYaml defaults = null)
@@ -511,7 +512,7 @@ namespace OpenRA.Mods.Common.Graphics
 					var dx = r.Offset.X + (r.FlipX ? -s.Offset.X : s.Offset.X);
 					var dy = r.Offset.Y + (r.FlipY ? -s.Offset.Y : s.Offset.Y);
 					var dz = r.Offset.Z + s.Offset.Z + r.ZRamp * dy;
-					var sprite = new Sprite(s.Sheet, FlipRectangle(s.Bounds, r.FlipX, r.FlipY), r.ZRamp, new float3(dx, dy, dz), s.Channel, r.BlendMode);
+					var sprite = new Sprite(s.Sheet, FlipRectangle(s.Bounds, r.FlipX, r.FlipY), r.ZRamp, new Vector3(dx, dy, dz), s.Channel, r.BlendMode);
 					if (depthSprite == null)
 						return sprite;
 
@@ -534,7 +535,7 @@ namespace OpenRA.Mods.Common.Graphics
 					throw new YamlException($"Sequence {image}.{Name} must define either 1 or {length.Value} Alpha values.");
 			}
 			else if (alphaFade)
-				alpha = Exts.MakeArray(length.Value, i => float2.Lerp(1f, 0f, i / (length.Value - 1f))).ToImmutableArray();
+				alpha = Exts.MakeArray(length.Value, i => OpenRA.Graphics.Util.Lerp(1f, 0f, i / (length.Value - 1f))).ToImmutableArray();
 
 			// Reindex sprites to order facings anti-clockwise and remove unused frames
 			var index = CalculateFrameIndices(start, length.Value, stride ?? length.Value, facings, default, transpose, reverseFacings, -1);

@@ -11,6 +11,7 @@
 
 using System;
 using System.Linq;
+using System.Numerics;
 using OpenRA.Graphics;
 using OpenRA.Mods.AS.Traits;
 using OpenRA.Mods.Common.Traits;
@@ -73,7 +74,7 @@ namespace OpenRA.Mods.AS.Widgets
 
 		Player player;
 		readonly World world;
-		/* readonly float2 iconOffset;*/
+		/* readonly Vector2 iconOffset;*/
 
 		public Func<Actor> GetActor = () => null;
 		Actor actor = null;
@@ -96,7 +97,7 @@ namespace OpenRA.Mods.AS.Widgets
 			this.worldRenderer = worldRenderer;
 			selection = world.WorldActor.Trait<ISelection>();
 
-			/*iconOffset = 0.5f * IconSize.ToFloat2() + IconPos;*/
+			/*iconOffset = 0.5f * IconSize.ToVector2() + IconPos;*/
 
 			currentPalette = NoIconPalette;
 			currentPaletteIsPlayerPalette = false;
@@ -223,7 +224,7 @@ namespace OpenRA.Mods.AS.Widgets
 			Game.Renderer.EnableAntialiasingFilter();
 
 			if (icon.Image != null)
-				WidgetUtils.DrawSpriteCentered(icon.Image, worldRenderer.Palette(currentPalette), IconPos + 0.5f * IconSize.ToFloat2() + RenderBounds.Location, IconScale);
+				WidgetUtils.DrawSpriteCentered(icon.Image, worldRenderer.Palette(currentPalette), IconPos.ToVector2() + 0.5f * IconSize.ToVector2() + RenderBounds.Location.ToVector2(), IconScale);
 
 			if (stats != null)
 			{
@@ -231,15 +232,15 @@ namespace OpenRA.Mods.AS.Widgets
 				{
 					var palette = iconOverlay.Info.IsPlayerPalette ? iconOverlay.Info.Palette + player.InternalName : iconOverlay.Info.Palette;
 					WidgetUtils.DrawSpriteCentered(
-						iconOverlay.Sprite, worldRenderer.Palette(palette), IconPos + 0.5f * IconSize.ToFloat2() +
-							RenderBounds.Location + iconOverlay.GetOffset(IconSize, IconScale), IconScale);
+						iconOverlay.Sprite, worldRenderer.Palette(palette), IconPos.ToVector2() + 0.5f * IconSize.ToVector2() +
+							RenderBounds.Location.ToVector2() + iconOverlay.GetOffset(IconSize, IconScale), IconScale);
 				}
 			}
 
 			if (isDisabled)
 				WidgetUtils.DrawSpriteCentered(
-					disabledOverlay.Image, worldRenderer.Palette(DisabledOverlayPalette), IconPos + 0.5f * IconSize.ToFloat2() +
-						RenderBounds.Location, IconScale);
+					disabledOverlay.Image, worldRenderer.Palette(DisabledOverlayPalette), IconPos.ToVector2() + 0.5f * IconSize.ToVector2() +
+						RenderBounds.Location.ToVector2(), IconScale);
 
 			Game.Renderer.DisableAntialiasingFilter();
 		}

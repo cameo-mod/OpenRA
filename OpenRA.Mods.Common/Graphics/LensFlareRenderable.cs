@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System.Numerics;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
 
@@ -68,10 +69,10 @@ namespace OpenRA.Mods.Common.Graphics
 			var transparentRay = Color.FromArgb(0, rayColor);
 			var transparentCore = Color.FromArgb(0, coreColor);
 
-			var left = center - new float3(horizontalLength / 2, 0, 0);
-			var right = center + new float3(horizontalLength / 2, 0, 0);
-			var top = center - new float3(0, verticalLength / 2, 0);
-			var bottom = center + new float3(0, verticalLength / 2, 0);
+			var left = center - new Vector3(horizontalLength / 2, 0, 0);
+			var right = center + new Vector3(horizontalLength / 2, 0, 0);
+			var top = center - new Vector3(0, verticalLength / 2, 0);
+			var bottom = center + new Vector3(0, verticalLength / 2, 0);
 
 			renderer.DrawLine(left, center, rayWidth, transparentRay, rayColor, BlendMode.Additive);
 			renderer.DrawLine(center, right, rayWidth, rayColor, transparentRay, BlendMode.Additive);
@@ -79,16 +80,16 @@ namespace OpenRA.Mods.Common.Graphics
 			renderer.DrawLine(center, bottom, rayWidth, rayColor, transparentRay, BlendMode.Additive);
 
 			var coreRayWidth = rayWidth > 1f ? rayWidth / 2 : 1f;
-			var coreLeft = center - new float3(horizontalLength / 4, 0, 0);
-			var coreRight = center + new float3(horizontalLength / 4, 0, 0);
-			var coreTop = center - new float3(0, verticalLength / 4, 0);
-			var coreBottom = center + new float3(0, verticalLength / 4, 0);
+			var coreLeft = center - new Vector3(horizontalLength / 4, 0, 0);
+			var coreRight = center + new Vector3(horizontalLength / 4, 0, 0);
+			var coreTop = center - new Vector3(0, verticalLength / 4, 0);
+			var coreBottom = center + new Vector3(0, verticalLength / 4, 0);
 			renderer.DrawLine(coreLeft, center, coreRayWidth, transparentCore, coreColor, BlendMode.Additive);
 			renderer.DrawLine(center, coreRight, coreRayWidth, coreColor, transparentCore, BlendMode.Additive);
 			renderer.DrawLine(coreTop, center, coreRayWidth, transparentCore, coreColor, BlendMode.Additive);
 			renderer.DrawLine(center, coreBottom, coreRayWidth, coreColor, transparentCore, BlendMode.Additive);
 
-			var coreOffset = new float3(coreSize / 2, coreSize / 2, 0);
+			var coreOffset = new Vector3(coreSize / 2, coreSize / 2, 0);
 			renderer.FillEllipse(center - coreOffset, center + coreOffset, coreColor, BlendMode.Additive);
 		}
 

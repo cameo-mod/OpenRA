@@ -718,6 +718,7 @@ namespace OpenRA.Platforms.Default
 	sealed class OpenAlAsyncLoadSound : OpenAlSound
 	{
 		static readonly byte[] SilentData = new byte[2];
+		readonly Lock syncObject = new();
 		readonly CancellationTokenSource cts = new();
 		readonly Task playTask;
 
@@ -770,7 +771,7 @@ namespace OpenRA.Platforms.Default
 					AL10.alSourcei(source, AL10.AL_BUFFER, (int)soundSource.Buffer);
 					silentSource.Dispose();
 
-					lock (cts)
+					lock (syncObject)
 					{
 						if (!cts.IsCancellationRequested)
 						{
@@ -821,7 +822,7 @@ namespace OpenRA.Platforms.Default
 
 		public override void Stop()
 		{
-			lock (cts)
+			lock (syncObject)
 			{
 				StopSource();
 				cts.Cancel();

@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using OpenRA.Effects;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
@@ -198,7 +199,7 @@ namespace OpenRA.Mods.Common.Effects
 
 			var imageRenderable = new SpriteRenderable(
 				image, pos, WVec.Zero, sequence.ZOffset, wr.Palette(palette),
-				scale, alpha, float3.Ones, tintModifiers, anim.IsDecoration, rotation);
+				scale, alpha, Vector3.One, tintModifiers, anim.IsDecoration, rotation);
 
 			var shadow = sequence.GetShadow(anim.CurrentFrame, facing);
 			if (shadow != null)
@@ -207,7 +208,7 @@ namespace OpenRA.Mods.Common.Effects
 
 				var shadowRenderable = new SpriteRenderable(
 					shadow, pos, -new WVec(0, 0, height), sequence.ShadowZOffset + height, wr.Palette(palette),
-					scale, 1f, float3.Ones, tintModifiers, true, rotation);
+					scale, 1f, Vector3.One, tintModifiers, true, rotation);
 
 				return new IRenderable[] { shadowRenderable, imageRenderable };
 			}

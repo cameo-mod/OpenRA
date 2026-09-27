@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using OpenRA.Effects;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Effects;
@@ -392,7 +393,7 @@ namespace OpenRA.Mods.AS.Traits
 						.Select(r =>
 						{
 							var mr = (IModifyableRenderable)r;
-							var tint = new float3(power.FireArmamentPowerInfo.TargetTintColor.Value.R, power.FireArmamentPowerInfo.TargetTintColor.Value.G, power.FireArmamentPowerInfo.TargetTintColor.Value.B) / 255f;
+							var tint = new Vector3(power.FireArmamentPowerInfo.TargetTintColor.Value.R, power.FireArmamentPowerInfo.TargetTintColor.Value.G, power.FireArmamentPowerInfo.TargetTintColor.Value.B) / 255f;
 							mr = mr.WithTint(tint, mr.TintModifiers | TintModifiers.ReplaceColor).WithAlpha(power.FireArmamentPowerInfo.TargetTintColor.Value.A / 255f);
 							return mr;
 						});

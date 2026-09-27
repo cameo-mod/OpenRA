@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using OpenRA;
@@ -105,7 +106,7 @@ namespace OpenRA.Mods.Common.Widgets
 				return;
 
 			var labelRect = rect;
-			if (icon.ButtonLabelOffset != float2.Zero)
+			if (icon.ButtonLabelOffset != Vector2.Zero)
 				labelRect = new Rectangle(
 					rect.Left + (int)icon.ButtonLabelOffset.X,
 					rect.Top + (int)icon.ButtonLabelOffset.Y,
@@ -172,11 +173,11 @@ namespace OpenRA.Mods.Common.Widgets
 			var y = bar.Top + (bar.Height - textSize.Y) / 2;
 			var pos = new int2(x, y);
 
-			font.DrawText(text, pos + new int2(-1, 0), style.TextDark);
-			font.DrawText(text, pos + new int2(1, 0), style.TextDark);
-			font.DrawText(text, pos + new int2(0, -1), style.TextDark);
-			font.DrawText(text, pos + new int2(0, 1), style.TextDark);
-			font.DrawText(text, pos, style.TextLight);
+			font.DrawText(text, (pos + new int2(-1, 0)).ToVector2(), style.TextDark);
+			font.DrawText(text, (pos + new int2(1, 0)).ToVector2(), style.TextDark);
+			font.DrawText(text, (pos + new int2(0, -1)).ToVector2(), style.TextDark);
+			font.DrawText(text, (pos + new int2(0, 1)).ToVector2(), style.TextDark);
+			font.DrawText(text, pos.ToVector2(), style.TextLight);
 		}
 
 		static class OsShpCameoFontRenderer
@@ -247,7 +248,7 @@ namespace OpenRA.Mods.Common.Widgets
 				foreach (var run in runs)
 				{
 					if (run.Sprite != null)
-						WidgetUtils.DrawSprite(run.Sprite, new float2(x, y));
+						WidgetUtils.DrawSprite(run.Sprite, new Vector2(x, y));
 
 					x += run.Advance;
 				}

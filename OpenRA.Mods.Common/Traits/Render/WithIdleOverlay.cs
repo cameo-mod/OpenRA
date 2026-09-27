@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Graphics;
 using OpenRA.Primitives;
@@ -53,7 +54,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 
 		public readonly bool IsDecoration = false;
 
-		internal static WVec SpriteOffsetToWorld(Size tileSize, int tileScale, in float3 offset)
+		internal static WVec SpriteOffsetToWorld(Size tileSize, int tileScale, in Vector3 offset)
 		{
 			return new WVec(
 				(int)Math.Round(offset.X * tileScale / tileSize.Width),
@@ -61,7 +62,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 				0);
 		}
 
-		internal static WVec SpriteOffsetToWorld(World world, in float3 offset)
+		internal static WVec SpriteOffsetToWorld(World world, in Vector3 offset)
 		{
 			return SpriteOffsetToWorld(world.Map.Rules.TerrainInfo.TileSize, world.Map.Grid.TileScale, offset);
 		}

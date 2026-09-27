@@ -17,6 +17,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using OpenRA.GameRules;
+using System.Runtime.CompilerServices;
 using OpenRA.Primitives;
 
 namespace OpenRA
@@ -125,16 +126,16 @@ namespace OpenRA
 		public string Map = null;
 
 		[Desc("Takes a comma separated list of IP addresses that are not allowed to join.")]
-		public FrozenSet<string> Ban = FrozenSet<string>.Empty;
+		public FrozenSet<string> Ban = [];
 
 		[Desc("For dedicated servers only, allow anonymous clients to join.")]
 		public bool RequireAuthentication = false;
 
 		[Desc("For dedicated servers only, if non-empty, only allow authenticated players with these profile IDs to join.")]
-		public FrozenSet<int> ProfileIDWhitelist = FrozenSet<int>.Empty;
+		public FrozenSet<int> ProfileIDWhitelist = [];
 
 		[Desc("For dedicated servers only, if non-empty, always reject players with these user IDs from joining.")]
-		public FrozenSet<int> ProfileIDBlacklist = FrozenSet<int>.Empty;
+		public FrozenSet<int> ProfileIDBlacklist = [];
 
 		[Desc("For dedicated servers only, controls whether a game can be started with just one human player in the lobby.")]
 		public bool EnableSingleplayer = false;
@@ -164,7 +165,7 @@ namespace OpenRA
 		public bool EnableLintChecks = true;
 
 		[Desc("For dedicated servers only, a comma separated list of map uids that are allowed to be used.")]
-		public FrozenSet<string> MapPool = FrozenSet<string>.Empty;
+		public FrozenSet<string> MapPool = [];
 
 		[Desc("Delay in milliseconds before newly joined players can send chat messages.")]
 		public int FloodLimitJoinCooldown = 5000;
@@ -506,10 +507,10 @@ namespace OpenRA
 				var err2 = FieldLoader.InvalidValueAction;
 				try
 				{
-					FieldLoader.InvalidValueAction = (s, t, f) =>
+					FieldLoader.InvalidValueAction = (value, fieldType, fieldName) =>
 					{
-						var ret = t.GetField(f)?.GetValue(module);
-						Console.WriteLine($"FieldLoader: Cannot parse `{s}` into `{f}:{t.Name}`; substituting default `{ret}`");
+						var ret = fieldType.IsValueType ? RuntimeHelpers.GetUninitializedObject(fieldType) : null;
+						Console.WriteLine($"FieldLoader: Cannot parse `{value}` into field `{fieldName}` of type `{fieldType}`; substituting default `{ret}`");
 						return ret;
 					};
 

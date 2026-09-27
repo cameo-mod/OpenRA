@@ -379,7 +379,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					ds.UIScale = dds.UIScale;
 					Game.Renderer.SetUIScale(dds.UIScale);
 					RecalculateWidgetLayout(Ui.Root);
-					Viewport.LastMousePos = (Viewport.LastMousePos.ToFloat2() * oldScale / ds.UIScale).ToInt2();
+					Viewport.LastMousePos = int2.FromVector(Viewport.LastMousePos.ToVector2() * oldScale / ds.UIScale);
 				}
 
 				ps.Color = dps.Color;
@@ -613,7 +613,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 							Game.Renderer.SetUIScale(o);
 							RecalculateWidgetLayout(Ui.Root);
-							Viewport.LastMousePos = (Viewport.LastMousePos.ToFloat2() * oldScale / gs.UIScale).ToInt2();
+							Viewport.LastMousePos = int2.FromVector(Viewport.LastMousePos.ToVector2() * oldScale / gs.UIScale);
 						});
 					});
 
@@ -623,7 +623,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			}
 
 			var viewportSizes = Game.ModData.GetOrCreate<WorldViewportSizes>();
-			var maxScales = new float2(Game.Renderer.NativeResolution) / new float2(viewportSizes.MinEffectiveResolution);
+			var maxScales = Game.Renderer.NativeResolution.ToVector2() / viewportSizes.MinEffectiveResolution.ToVector2();
 			var maxScale = Math.Min(maxScales.X, maxScales.Y);
 
 			var validScales = new[] { 1f, 1.25f, 1.5f, 1.75f, 2f }.Where(x => x <= maxScale);

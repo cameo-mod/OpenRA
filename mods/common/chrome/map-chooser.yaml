@@ -157,12 +157,12 @@ Background@MAPCHOOSER_PANEL:
 			Height: 25
 			Text: button-mapchooser-panel-delete-map
 			Font: Bold
-		Button@BROWSE_BUTTON:
+		Button@DELETE_ALL_MAPS_BUTTON:
 			X: 300
 			Y: PARENT_HEIGHT - 45
-			Width: 90
+			Width: 120
 			Height: 25
-			Text: button-mapchooser-panel-browse
+			Text: button-mapchooser-panel-delete-all-maps
 			Font: Bold
 		Label@REMOTE_MAP_LABEL:
 			X: 140
@@ -187,6 +187,7 @@ Background@MAPCHOOSER_PANEL:
 			Text: button-back
 			Font: Bold
 			Key: escape
+		Container@DROPDOWN_PANEL_ROOT:
 		TooltipContainer@TOOLTIP_CONTAINER:
 
 
@@ -246,21 +247,7 @@ Container@MAPCHOOSER_GENERATE_PANEL:
 			Height: 25
 			Text: button-mapchooser-random-map-generate
 			Font: Bold
-		Button@BUTTON_RANDOMIZE_SEED:
-			X: PARENT_WIDTH - 510
-			Y: PARENT_HEIGHT + 40
-			Width: 120
-			Height: 25
-			Text: button-mapchooser-random-map-randomize-seed
-			Font: Bold
-		Button@BUTTON_RENAME:
-			X: 130
-			Y: PARENT_HEIGHT + 40
-			Width: 120
-			Height: 25
-			Text: button-mapchooser-random-map-rename
-			Font: Bold
-		ScrollPanel@SETTINGS_PANEL:
+		ScrollPanel@OPTIONS_PANEL:
 			TopBottomSpacing: 5
 			Width: 485
 			Height: PARENT_HEIGHT + 30
@@ -271,7 +258,7 @@ Container@MAPCHOOSER_GENERATE_PANEL:
 					Children:
 						Checkbox@CHECKBOX:
 							X: 10
-							Y: 5
+							Y: 20
 							Width: PARENT_WIDTH - 20
 							Height: 20
 				Container@TEXT_TEMPLATE:
@@ -302,96 +289,4 @@ Container@MAPCHOOSER_GENERATE_PANEL:
 							Y: 20
 							Width: PARENT_WIDTH - 20
 							Height: 25
-							PanelRoot: GENERATOR_DROPDOWN_PANEL_ROOT # ensure that tooltips for the options are on top of the dropdown panel
-				Container@DROPDOWN_TOOLTIP_TEMPLATE:
-					Width: 230
-					Height: 50
-					Children:
-						LabelForInput@LABEL:
-							X: 10
-							Width: PARENT_WIDTH - 20
-							Height: 20
-							For: DROPDOWN
-						DropDownButton@DROPDOWN:
-							X: 10
-							Y: 20
-							Width: PARENT_WIDTH - 20
-							Height: 25
-							PanelRoot: GENERATOR_DROPDOWN_PANEL_ROOT # ensure that tooltips for the options are on top of the dropdown panel
-							TooltipContainer: TOOLTIP_CONTAINER
-							TooltipTemplate: SIMPLE_TOOLTIP
-		Container@GENERATOR_DROPDOWN_PANEL_ROOT:
-		Button@BUTTON_BLUEPRINT:
-			X: 0
-			Y: PARENT_HEIGHT + 40
-			Width: 120
-			Height: 25
-			Text: button-mapchooser-blueprint
-			Font: Bold
-		Container@BLUEPRINT_PANEL:
-			X: 0
-			Y: 0
-			Width: PARENT_WIDTH
-			Height: PARENT_HEIGHT + 80
-			Visible: false
-			Children:
-				Background@BLUEPRINT_BACKDROP:
-					Width: PARENT_WIDTH
-					Height: PARENT_HEIGHT + 80
-				Background@BLUEPRINT_DIALOG:
-					X: (PARENT_WIDTH - 520) / 2
-					Y: (PARENT_HEIGHT - 160) / 2
-					Width: 520
-					Height: 160
-					Background: dialog3
-					Children:
-						Label@BLUEPRINT_TITLE:
-							Y: 10
-							Width: PARENT_WIDTH
-							Height: 20
-							Align: Center
-							Text: label-mapchooser-blueprint-title
-							Font: Bold
-						Label@BLUEPRINT_EXPORT_LABEL:
-							X: 10
-							Y: 40
-							Width: 500
-							Height: 20
-							Text: label-mapchooser-blueprint-export
-						TextField@BLUEPRINT_EXPORT:
-							X: 10
-							Y: 62
-							Width: 385
-							Height: 25
-						Button@BLUEPRINT_COPY:
-							X: 400
-							Y: 62
-							Width: 110
-							Height: 25
-							Text: button-mapchooser-blueprint-copy
-							Font: Bold
-						Label@BLUEPRINT_IMPORT_LABEL:
-							X: 10
-							Y: 97
-							Width: 500
-							Height: 20
-							Text: label-mapchooser-blueprint-import
-						TextField@BLUEPRINT_IMPORT:
-							X: 10
-							Y: 119
-							Width: 385
-							Height: 25
-						Button@BLUEPRINT_LOAD:
-							X: 400
-							Y: 119
-							Width: 55
-							Height: 25
-							Text: button-mapchooser-blueprint-load
-							Font: Bold
-						Button@BLUEPRINT_CLOSE:
-							X: 460
-							Y: 119
-							Width: 55
-							Height: 25
-							Text: button-back
-							Font: Bold
+							PanelRoot: DROPDOWN_PANEL_ROOT

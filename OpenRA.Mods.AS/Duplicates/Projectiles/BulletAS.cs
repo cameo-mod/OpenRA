@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using OpenRA.GameRules;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common;
@@ -157,7 +158,7 @@ namespace OpenRA.Mods.AS.Projectiles
 		readonly ProjectileArgs args;
 		readonly Animation anim;
 
-		readonly float3 shadowColor;
+		readonly Vector3 shadowColor;
 		readonly float shadowAlpha;
 
 		[VerifySync]
@@ -243,7 +244,7 @@ namespace OpenRA.Mods.AS.Projectiles
 			smokeTicks = info.TrailDelay;
 			remainingBounces = info.BounceCount;
 
-			shadowColor = new float3(info.ShadowColor.R, info.ShadowColor.G, info.ShadowColor.B) / 255f;
+			shadowColor = new Vector3(info.ShadowColor.R, info.ShadowColor.G, info.ShadowColor.B) / 255f;
 			shadowAlpha = info.ShadowColor.A / 255f;
 		}
 

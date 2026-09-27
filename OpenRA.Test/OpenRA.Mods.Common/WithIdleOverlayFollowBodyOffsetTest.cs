@@ -10,6 +10,7 @@
 #endregion
 
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using NUnit.Framework;
 using OpenRA.Mods.Common.Traits.Render;
@@ -30,7 +31,7 @@ namespace OpenRA.Test
 		[Test]
 		public void ConvertsScaledSpritePixelsToEquivalentWorldOffset()
 		{
-			var spriteOffset = 1.5f * new float3(8, -32, 0);
+			var spriteOffset = 1.5f * new Vector3(8, -32, 0);
 			var method = typeof(WithIdleOverlayInfo).GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
 				.Single(candidate => candidate.Name == "SpriteOffsetToWorld" && candidate.GetParameters()[0].ParameterType == typeof(Size));
 			var worldOffset = (WVec)method.Invoke(null, [new Size(48, 24), 1024, spriteOffset]);

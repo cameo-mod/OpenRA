@@ -10,6 +10,7 @@
 #endregion
 
 using System.Collections.Generic;
+using System.Numerics;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
 using OpenRA.Traits;
@@ -39,20 +40,21 @@ namespace OpenRA.Mods.Common.Traits
 
 	public class WithColoredOverlay : ConditionalTrait<WithColoredOverlayInfo>, IRenderModifier
 	{
-		readonly float3 tint;
+		readonly Vector3 tint;
 		readonly float alpha;
-		readonly float3 multiply;
+		readonly Vector3 multiply;
 
 		public WithColoredOverlay(WithColoredOverlayInfo info)
 			: base(info)
 		{
-			tint = new float3(info.Color.R, info.Color.G, info.Color.B) / 255f;
-			alpha = info.Color.A / 255f;
+			var color = info.Color.ToVector4();
+			tint = color.AsVector3();
+			alpha = color.W;
 
 			// Photoshop "Multiply" at <alpha> opacity: lerp the per-channel multiplier from
 			// white (1 = no change) toward the tint colour. At full alpha the sprite is multiplied
 			// straight by the tint; at lower alpha the darkening is proportionally weaker.
-			var white = new float3(1f, 1f, 1f);
+			var white = Vector3.One;
 			multiply = white + alpha * (tint - white);
 		}
 
@@ -91,7 +93,7 @@ namespace OpenRA.Mods.Common.Traits
 						// replacing colours, and draws shadow untinted (handled in ModelRenderable)
 						// Scale tint RGB by VoxelAlpha so the additive strength is controlled by VoxelAlpha
 						var voxelStrength = Info.VoxelAlpha / 255f;
-						var scaledTint = new float3(tint.X * voxelStrength, tint.Y * voxelStrength, tint.Z * voxelStrength);
+						var scaledTint = new Vector3(tint.X * voxelStrength, tint.Y * voxelStrength, tint.Z * voxelStrength);
 						// Pass alpha=2f as sentinel — shader sees vTint.a > 1.0 and uses additive mode
 						yield return ma.WithTint(scaledTint, TintModifiers.OverlayTint).WithAlpha(2f);
 					}

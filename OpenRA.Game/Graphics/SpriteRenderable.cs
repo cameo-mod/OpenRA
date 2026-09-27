@@ -10,6 +10,7 @@
 #endregion
 
 using System.Collections.Generic;
+using System.Numerics;
 using OpenRA.Primitives;
 
 namespace OpenRA.Graphics
@@ -18,23 +19,23 @@ namespace OpenRA.Graphics
 	{
 		public readonly float BoundaryY;
 		public readonly float CoreHeight;
-		public readonly float3 SilhouetteColor;
+		public readonly Vector3 SilhouetteColor;
 		public readonly float SilhouetteAlpha;
-		public readonly float3 CoreColor;
+		public readonly Vector3 CoreColor;
 		public readonly float CoreAlpha;
-		public readonly float3 InnerGlowColor;
+		public readonly Vector3 InnerGlowColor;
 		public readonly float InnerGlowAlpha;
-		public readonly float3 OuterGlowColor;
+		public readonly Vector3 OuterGlowColor;
 		public readonly float OuterGlowAlpha;
-		public readonly float3 AfterglowColor;
+		public readonly Vector3 AfterglowColor;
 		public readonly float AfterglowAlpha;
 
 		public SpriteMaterialization(float boundaryY, float coreHeight,
-			in float3 silhouetteColor, float silhouetteAlpha,
-			in float3 coreColor, float coreAlpha,
-			in float3 innerGlowColor, float innerGlowAlpha,
-			in float3 outerGlowColor, float outerGlowAlpha,
-			in float3 afterglowColor, float afterglowAlpha)
+			in Vector3 silhouetteColor, float silhouetteAlpha,
+			in Vector3 coreColor, float coreAlpha,
+			in Vector3 innerGlowColor, float innerGlowAlpha,
+			in Vector3 outerGlowColor, float outerGlowAlpha,
+			in Vector3 afterglowColor, float afterglowAlpha)
 		{
 			BoundaryY = boundaryY;
 			CoreHeight = coreHeight;
@@ -62,11 +63,11 @@ namespace OpenRA.Graphics
 		readonly SpriteMaterialization? materialization;
 
 		public SpriteRenderable(Sprite sprite, WPos pos, WVec offset, int zOffset, PaletteReference palette, float scale, float alpha,
-			float3 tint, TintModifiers tintModifiers, bool isDecoration, WAngle rotation)
+			Vector3 tint, TintModifiers tintModifiers, bool isDecoration, WAngle rotation)
 			: this(sprite, pos, offset, zOffset, palette, scale, alpha, tint, tintModifiers, isDecoration, rotation, null) { }
 
 		SpriteRenderable(Sprite sprite, WPos pos, WVec offset, int zOffset, PaletteReference palette, float scale, float alpha,
-			float3 tint, TintModifiers tintModifiers, bool isDecoration, WAngle rotation, SpriteMaterialization? materialization)
+			Vector3 tint, TintModifiers tintModifiers, bool isDecoration, WAngle rotation, SpriteMaterialization? materialization)
 		{
 			this.sprite = sprite;
 			this.pos = pos;
@@ -89,7 +90,7 @@ namespace OpenRA.Graphics
 		}
 
 		public SpriteRenderable(Sprite sprite, WPos pos, WVec offset, int zOffset, PaletteReference palette, float scale, float alpha,
-			float3 tint, TintModifiers tintModifiers, bool isDecoration)
+			Vector3 tint, TintModifiers tintModifiers, bool isDecoration)
 			: this(sprite, pos, offset, zOffset, palette, scale, alpha, tint, tintModifiers, isDecoration, WAngle.Zero) { }
 
 		public WPos Pos => pos + Offset;
@@ -99,7 +100,7 @@ namespace OpenRA.Graphics
 		public bool IsDecoration { get; }
 
 		public float Alpha { get; }
-		public float3 Tint { get; }
+		public Vector3 Tint { get; }
 		public TintModifiers TintModifiers { get; }
 
 		public IPalettedRenderable WithPalette(PaletteReference newPalette)
@@ -132,7 +133,7 @@ namespace OpenRA.Graphics
 				IsDecoration, rotation, materialization);
 		}
 
-		public IModifyableRenderable WithTint(in float3 newTint, TintModifiers newTintModifiers)
+		public IModifyableRenderable WithTint(in Vector3 newTint, TintModifiers newTintModifiers)
 		{
 			return new SpriteRenderable(sprite, pos, Offset, ZOffset, Palette, scale, Alpha, newTint, newTintModifiers,
 				IsDecoration, rotation, materialization);
@@ -144,10 +145,10 @@ namespace OpenRA.Graphics
 				IsDecoration, rotation, value);
 		}
 
-		float3 ScreenPosition(WorldRenderer wr)
+		Vector3 ScreenPosition(WorldRenderer wr)
 		{
 			var s = 0.5f * scale * sprite.Size;
-			return wr.Screen3DPxPosition(pos) + wr.ScreenPxOffset(Offset) - new float3((int)s.X, (int)s.Y, s.Z);
+			return wr.Screen3DPxPosition(pos) + wr.ScreenPxOffset(Offset).ToVector3() - new Vector3((int)s.X, (int)s.Y, s.Z);
 		}
 
 		public IFinalizedRenderable PrepareRender(WorldRenderer wr) { return this; }
@@ -176,8 +177,8 @@ namespace OpenRA.Graphics
 		public void RenderDebugGeometry(WorldRenderer wr)
 		{
 			var pos = ScreenPosition(wr) + scale * sprite.Offset;
-			var tl = wr.Viewport.WorldToViewPx(pos);
-			var br = wr.Viewport.WorldToViewPx(pos + scale * sprite.Size);
+			var tl = wr.Viewport.WorldToViewPx(pos).ToVector3();
+			var br = wr.Viewport.WorldToViewPx(pos + scale * sprite.Size).ToVector3();
 			if (rotation == WAngle.Zero)
 				Game.Renderer.RgbaColorRenderer.DrawRect(tl, br, 1, Color.Red);
 			else
@@ -189,8 +190,8 @@ namespace OpenRA.Graphics
 			return CalculateScreenBounds(ScreenPosition(wr), sprite.Offset, sprite.Size, scale, rotation.RendererRadians());
 		}
 
-		internal static Rectangle CalculateScreenBounds(in float3 screenPosition, in float3 spriteOffset,
-			in float3 spriteSize, float scale, float rotation)
+		internal static Rectangle CalculateScreenBounds(in Vector3 screenPosition, in Vector3 spriteOffset,
+			in Vector3 spriteSize, float scale, float rotation)
 		{
 			return Util.BoundingRectangle(screenPosition + scale * spriteOffset, scale * spriteSize, rotation);
 		}

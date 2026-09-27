@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using OpenRA.Primitives;
 using OpenRA.Support;
 using OpenRA.Traits;
@@ -35,26 +36,26 @@ namespace OpenRA.Mods.Common.Traits
 
 	public sealed class TerrainLighting : ITerrainLighting
 	{
-		sealed class LightSource(WPos pos, CPos cell, WDist range, float intensity, in float3 tint)
+		sealed class LightSource(WPos pos, CPos cell, WDist range, float intensity, in Vector3 tint)
 		{
 			public readonly WPos Pos = pos;
 			public readonly CPos Cell = cell;
 			public readonly WDist Range = range;
 			public readonly float Intensity = intensity;
-			public readonly float3 Tint = tint;
+			public readonly Vector3 Tint = tint;
 		}
 
 		readonly TerrainLightingInfo info;
 		readonly Map map;
 		readonly Dictionary<int, LightSource> lightSources = [];
 		readonly SpatiallyPartitioned<LightSource> partitionedLightSources;
-		readonly float3 globalTint;
+		readonly Vector3 globalTint;
 
 		// Dynamic multiplier applied on top of the terrain lighting (e.g. for an ambient
 		// weather tint). Defaults to white so it has no effect unless something sets it.
 		// Sprites that set IgnoreWorldTint skip this, as does TintAt's consumers for tiles
 		// flagged to ignore tint, so weapon/flame visuals can stay untinted.
-		float3 ambientTint = float3.Ones;
+		Vector3 ambientTint = Vector3.One;
 
 		int nextLightSourceToken = 1;
 
@@ -69,7 +70,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		// Sets a global tint multiplier applied to all terrain-lit sprites and tiles, then
 		// re-bakes the cached terrain tint so the change takes effect immediately.
-		public void SetAmbientTint(in float3 tint)
+		public void SetAmbientTint(in Vector3 tint)
 		{
 			ambientTint = tint;
 			RefreshGlobalLighting();
@@ -79,7 +80,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			this.info = info;
 			map = world.Map;
-			globalTint = new float3(info.RedTint, info.GreenTint, info.BlueTint);
+			globalTint = new Vector3(info.RedTint, info.GreenTint, info.BlueTint);
 
 			var tileScale = map.Grid.TileScale;
 			partitionedLightSources = new SpatiallyPartitioned<LightSource>(
@@ -95,7 +96,7 @@ namespace OpenRA.Mods.Common.Traits
 			return new Rectangle(c.X - r, c.Y - r, 2 * r, 2 * r);
 		}
 
-		public int AddLightSource(WPos pos, WDist range, float intensity, in float3 tint)
+		public int AddLightSource(WPos pos, WDist range, float intensity, in Vector3 tint)
 		{
 			var token = nextLightSourceToken++;
 			var source = new LightSource(pos, map.CellContaining(pos), range, intensity, tint);
@@ -122,7 +123,7 @@ namespace OpenRA.Mods.Common.Traits
 					CellChanged(c.ToMPos(map));
 		}
 
-		float3 ITerrainLighting.TintAt(WPos pos)
+		Vector3 ITerrainLighting.TintAt(WPos pos)
 		{
 			using (new PerfSample("terrain_lighting"))
 			{

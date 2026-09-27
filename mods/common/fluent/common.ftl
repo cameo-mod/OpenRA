@@ -29,6 +29,7 @@ notification-searching-map = Searching for map on the Resource Center...
 notification-admin-change-configuration = Only the host can change the configuration.
 notification-changed-map = { $player } changed the map to { $map }.
 notification-option-changed = { $player } changed { $name } to { $value }.
+notification-hidden-map-has-been-previewed = This generated map has been previewed by the admin during creation.
 notification-you-were-kicked = You have been kicked from the server.
 notification-admin-kicked = { $admin } kicked { $player } from the server.
 notification-kicked = { $player } was kicked from the server.

@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System.Numerics;
 using NUnit.Framework;
 using OpenRA.Graphics;
 using OpenRA.Primitives;
@@ -22,7 +23,7 @@ namespace OpenRA.Test
 		public void ScreenBoundsScaleSpriteOffsetAndSize()
 		{
 			var actual = SpriteRenderable.CalculateScreenBounds(
-				new float3(100, 100, 0), new float3(-10, -5, 0), new float3(20, 10, 0), 2f, 0f);
+				new Vector3(100, 100, 0), new Vector3(-10, -5, 0), new Vector3(20, 10, 0), 2f, 0f);
 
 			Assert.That(actual, Is.EqualTo(new Rectangle(80, 90, 40, 20)));
 		}
@@ -30,9 +31,9 @@ namespace OpenRA.Test
 		[Test]
 		public void ScreenBoundsApplyScaleBeforeRotation()
 		{
-			var screenPosition = new float3(100, 100, 0);
-			var spriteOffset = new float3(-10, -5, 0);
-			var spriteSize = new float3(20, 10, 0);
+			var screenPosition = new Vector3(100, 100, 0);
+			var spriteOffset = new Vector3(-10, -5, 0);
+			var spriteSize = new Vector3(20, 10, 0);
 			const float Scale = 2f;
 			const float Rotation = 0.37f;
 			var expected = Util.BoundingRectangle(
@@ -50,7 +51,7 @@ namespace OpenRA.Test
 		public void ScreenBoundsSupportFractionalScale()
 		{
 			var actual = SpriteRenderable.CalculateScreenBounds(
-				new float3(100, 100, 0), new float3(-10, -5, 0), new float3(20, 10, 0), 0.75f, 0f);
+				new Vector3(100, 100, 0), new Vector3(-10, -5, 0), new Vector3(20, 10, 0), 0.75f, 0f);
 
 			Assert.That(actual, Is.EqualTo(new Rectangle(92, 96, 15, 7)));
 		}

@@ -13,6 +13,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Numerics;
 using OpenRA.GameRules;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Effects;
@@ -101,7 +102,7 @@ namespace OpenRA.Mods.Common.Projectiles
 		public readonly string BounceSound = null;
 
 		[Desc("Terrain where the projectile explodes instead of bouncing.")]
-		public readonly FrozenSet<string> InvalidBounceTerrain = FrozenSet<string>.Empty;
+		public readonly FrozenSet<string> InvalidBounceTerrain = [];
 
 		[Desc("Trigger the explosion if the projectile touches an actor thats owner has these player relationships.")]
 		public readonly PlayerRelationship ValidBounceBlockerRelationships = PlayerRelationship.Enemy | PlayerRelationship.Neutral;
@@ -172,7 +173,7 @@ namespace OpenRA.Mods.Common.Projectiles
 		readonly string trailPalette;
 		readonly int projectileStreakLength;
 
-		readonly float3 shadowColor;
+		readonly Vector3 shadowColor;
 		readonly float shadowAlpha;
 		int renderedWorldTick = -1;
 		long renderMoveStart;
@@ -257,8 +258,9 @@ namespace OpenRA.Mods.Common.Projectiles
 			smokeTicks = info.TrailDelay;
 			remainingBounces = info.BounceCount;
 
-			shadowColor = new float3(info.ShadowColor.R, info.ShadowColor.G, info.ShadowColor.B) / 255f;
-			shadowAlpha = info.ShadowColor.A / 255f;
+			var sColor = info.ShadowColor.ToVector4();
+			shadowColor = sColor.AsVector3();
+			shadowAlpha = sColor.W;
 		}
 
 		int CalculateFlightLength(int distance)

@@ -10,6 +10,7 @@
 #endregion
 
 using System.Collections.Generic;
+using System.Numerics;
 using OpenRA.Graphics;
 using OpenRA.Traits;
 
@@ -72,7 +73,7 @@ namespace OpenRA.Mods.Common.Traits.Render
 			return
 			[
 				new UISpriteRenderable(anim.Image, self.CenterPosition,
-					screenPos - (0.5f * scale * anim.Image.Size.XY).ToInt2(), 0, GetPalette(self, wr), scale)
+					screenPos.ToVector2() - 0.5f * scale * anim.Image.Size.AsVector2(), 0, GetPalette(self, wr), scale)
 			];
 		}
 
