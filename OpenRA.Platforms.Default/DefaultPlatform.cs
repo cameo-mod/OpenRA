@@ -24,6 +24,18 @@ namespace OpenRA.Platforms.Default
 
 		public ISoundEngine CreateSound(string device)
 		{
+			if (string.Equals(device, "none", StringComparison.OrdinalIgnoreCase))
+			{
+				Log.Write("sound", "Sound.Device=none selected; using DummySoundEngine.");
+				return new DummySoundEngine();
+			}
+
+			if (Environment.GetEnvironmentVariable("OPENRA_NO_AUDIO") == "1")
+			{
+				Log.Write("sound", "OPENRA_NO_AUDIO=1 selected; using DummySoundEngine.");
+				return new DummySoundEngine();
+			}
+
 			try
 			{
 				return new OpenAlSoundEngine(device);
