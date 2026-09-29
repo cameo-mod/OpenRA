@@ -678,6 +678,17 @@ namespace OpenRA.Mods.Common.Traits
 		void RequestLocation(CPos refineryLocation, CPos conyardLocation, Actor expandActor);
 	}
 
+	/// <summary>
+	/// Where an MCV should found its next base, from a module that scores resource fields (Cameo's expansion
+	/// planner). McvExpansionManagerBotModule deploys toward the first non-null site; null keeps its own choice.
+	/// It decides where, never when: expansion triggers stay the MCV module's own.
+	/// </summary>
+	[RequireExplicitImplementation]
+	public interface IBotMcvExpansionSiteProvider
+	{
+		CPos? McvExpansionSite(Actor mcv);
+	}
+
 	[RequireExplicitImplementation]
 	public interface IEditorActorOptions : ITraitInfoInterface
 	{

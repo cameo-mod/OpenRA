@@ -143,6 +143,7 @@ namespace OpenRA.Mods.Common.Traits
 		IBotPositionsUpdated[] notifyPositionsUpdated;
 		IBotRequestUnitProduction[] requestUnitProduction;
 		IBotSuggestRefineryProduction[] suggestRefineryProduction;
+		IBotMcvExpansionSiteProvider[] siteProviders;
 
 		readonly Dictionary<Actor, CPos?> activeMCVs = [];
 		readonly Dictionary<Actor, int> conyardRelocationTimeouts = [];
@@ -567,6 +568,7 @@ namespace OpenRA.Mods.Common.Traits
 			if (firstTick)
 			{
 				resourceMapModule = bot.Player.PlayerActor.TraitsImplementing<ResourceMapBotModule>().FirstOrDefault(t => t.IsTraitEnabled());
+				siteProviders = bot.Player.PlayerActor.TraitsImplementing<IBotMcvExpansionSiteProvider>().ToArray();
 				SwitchExpansionMode(Info.InitialExpansionMode);
 
 				pathDistanceSquareFactor = resourceMapModule.GetIndiceRowCount() * resourceMapModule.GetIndiceRowCount()
@@ -915,6 +917,21 @@ namespace OpenRA.Mods.Common.Traits
 			var mobile = mcv.TraitOrDefault<Mobile>();
 
 			var (expandCenter, attraction, checkspot) = GetExpansionCenter(mcv, mobile, allowfallback);
+
+			// A site provider (Cameo's expansion planner) chooses where the MCV goes; this module still decides when.
+			if (siteProviders != null)
+			{
+				foreach (var provider in siteProviders)
+				{
+					var site = provider.McvExpansionSite(mcv);
+					if (site == null)
+						continue;
+
+					expandCenter = site;
+					attraction = Math.Max(attraction, 1);
+					break;
+				}
+			}
 
 			// Find the deployable cell
 			CPos? FindDeployCell(CPos? sourceCell, CPos? targetCell, int minRange, int maxRange, int tryMaintainRange)
