@@ -666,6 +666,18 @@ namespace OpenRA.Mods.Common.Traits
 	}
 
 	[RequireExplicitImplementation]
+	public interface IBotRequestPauseUnitProductionForQueue
+	{
+		bool PauseUnitProductionForQueue(string queue, ActorInfo actorInfo);
+	}
+
+	[RequireExplicitImplementation]
+	public interface IBotCashReservation
+	{
+		bool TryReserveCash(int cost, int minimumRemainingCash);
+	}
+
+	[RequireExplicitImplementation]
 	public interface IBotBaseExpansion
 	{
 		void UpdateExpansionParams(IBot bot, bool fallback, bool undeployEvenNoBase, Actor mustUndeploy);
@@ -673,9 +685,17 @@ namespace OpenRA.Mods.Common.Traits
 	}
 
 	[RequireExplicitImplementation]
+	public interface IBotExclusiveConstructionQueue
+	{
+		bool IsExclusiveConstructionQueue(Actor producer);
+	}
+
+	[RequireExplicitImplementation]
 	public interface IBotSuggestRefineryProduction
 	{
 		void RequestLocation(CPos refineryLocation, CPos conyardLocation, Actor expandActor);
+		bool IsRequestSatisfied(Actor expandActor);
+		void CompleteRequest(Actor expandActor);
 	}
 
 	/// <summary>

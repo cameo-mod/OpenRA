@@ -582,5 +582,18 @@ namespace OpenRA.Mods.Common.Traits
 			if (ResourceMapModule == null || ResourceMapModule.FindClosestIndiceFromCPos(refineryLocation).PlayerRefineryCount < Info.MaxRefineryPerIndice)
 				RequestedRefineries[expandActor] = (conyardLocation, refineryLocation);
 		}
+
+		bool IBotSuggestRefineryProduction.IsRequestSatisfied(Actor expandActor)
+		{
+			if (!RequestedRefineries.TryGetValue(expandActor, out var request))
+				return false;
+
+			var refinery = world.FindActorsInCircle(world.Map.CenterOfCell(request.ResourceLoc), WDist.FromCells(20))
+				.FirstOrDefault(a => a.Owner == player && !a.IsDead && Info.RefineryTypes.Contains(a.Info.Name));
+			return refinery != null && world.FindActorsInCircle(refinery.CenterPosition, WDist.FromCells(20))
+				.Any(a => a.Owner == player && !a.IsDead && a.Info.HasTraitInfo<HarvesterInfo>());
+		}
+
+		void IBotSuggestRefineryProduction.CompleteRequest(Actor expandActor) => RequestedRefineries.Remove(expandActor);
 	}
 }

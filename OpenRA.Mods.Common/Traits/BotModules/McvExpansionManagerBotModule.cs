@@ -45,6 +45,27 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Build additional MCV if cash is above this.")]
 		public readonly int BuildAdditionalMCVCashAmount = 5000;
 
+		[Desc("Maximum economic-expedition refinery sites by bot type. Missing bot types use legacy expansion.")]
+		public readonly Dictionary<string, int> ExpeditionSitesByBotType = new();
+
+		[Desc("Maximum simultaneous construction yards/MCVs by bot type after the expedition is complete.")]
+		public readonly Dictionary<string, int> ConstructionYardLimitsByBotType = new();
+
+		[Desc("Difficulty harvester caps used to stop economic expansion once saturated.")]
+		public readonly Dictionary<string, int> HarvesterLimitsByBotType = new();
+
+		[Desc("Cash required to launch the expedition MCV, including its recovery reserve.")]
+		public readonly int ExpeditionLaunchCash = 7500;
+
+		[Desc("Cash required before the expedition conyard may move to another resource site.")]
+		public readonly int ExpeditionRepeatCash = 5000;
+
+		[Desc("Additional cash required for each conventional expansion after the second base.")]
+		public readonly int LaterExpansionCashStep = 5000;
+
+		[Desc("Radius in cells used to confirm the requested refinery and an active harvester.")]
+		public readonly int ExpeditionConfirmationRadius = 20;
+
 		[Desc("Delay (in ticks) for giving orders to idle MCVs.")]
 		public readonly int ScanForNewMcvInterval = 20;
 
@@ -124,6 +145,8 @@ namespace OpenRA.Mods.Common.Traits
 		IBotTick,
 		IBotRespondToAttack,
 		IBotBaseExpansion,
+		IBotExclusiveConstructionQueue,
+		IGameSaveTraitData,
 		INotifyActorDisposing
 	{
 		// When ExpansionModeAutoSwitch is true, if the AI fails to find a deploy spot enough time even in CheckBase mode
@@ -152,6 +175,11 @@ namespace OpenRA.Mods.Common.Traits
 		ResourceMapBotModule resourceMapModule;
 		PlayerResources playerResources;
 		Actor mustUndeployCoyard;
+		Actor expeditionActor;
+		CPos? expeditionResourceLocation;
+		int expeditionSuccessfulSites;
+		int nextExpeditionActionTick;
+		readonly HashSet<CPos> visitedExpeditionSites = [];
 
 		int scanInterval;
 		int buildMCVInterval;
@@ -455,7 +483,9 @@ namespace OpenRA.Mods.Common.Traits
 						var resourceCellsCenter = indice.ResourceCellsCenter;
 						var resourceCreatorLocs = indice.ResourceCreatorLocs;
 
-						if ((failedAttempts > maxFailedAttempts >> 1 && resourceCellsCount <= thresholdRes) || lastFailedCheckSpot == indiceCenter)
+						if ((failedAttempts > maxFailedAttempts >> 1 && resourceCellsCount <= thresholdRes) || lastFailedCheckSpot == indiceCenter ||
+							visitedExpeditionSites.Any(v => (v - indiceCenter).LengthSquared <=
+								Info.CRmodeFriendlyRefineryDislikeRange * Info.CRmodeFriendlyRefineryDislikeRange))
 							continue;
 
 						var attraction = 0;
@@ -578,6 +608,8 @@ namespace OpenRA.Mods.Common.Traits
 				firstTick = false;
 			}
 
+			UpdateExpedition(bot);
+
 			if (--scanInterval <= 0)
 			{
 				CleanActiveMcvs();
@@ -670,9 +702,40 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 			var mcvNum = AIUtils.CountActorByCommonName(constructionMcvs);
 			var conyardNum = AIUtils.CountActorByCommonName(constructionYards);
+			var totalBases = conyardNum + mcvNum;
+
+			var expeditionEnabled = Info.ExpeditionSitesByBotType.TryGetValue(player.BotType, out var expeditionSiteLimit);
+			var expeditionComplete = expeditionEnabled && expeditionSuccessfulSites >= expeditionSiteLimit;
+			if (expeditionEnabled)
+			{
+				var harvesterCount = world.ActorsHavingTrait<Harvester>().Count(a => a.Owner == player && !a.IsDead);
+				if (conyardNum > 0 && (harvesterCount == 0 || !world.ActorsHavingTrait<Refinery>().Any(a => a.Owner == player && !a.IsDead)))
+					return;
+				if (Info.HarvesterLimitsByBotType.TryGetValue(player.BotType, out var harvesterLimit) &&
+					harvesterLimit > 0 && harvesterCount >= harvesterLimit)
+					return;
+
+				if (!expeditionComplete)
+				{
+					if (expeditionSiteLimit <= 0 || expeditionActor != null || playerResources.GetCashAndResources() < Info.ExpeditionLaunchCash)
+						return;
+				}
+				else
+				{
+					var constructionYardLimit = Info.ConstructionYardLimitsByBotType.TryGetValue(player.BotType, out var configuredLimit)
+						? configuredLimit : 2;
+					var requiredCash = Info.ExpeditionLaunchCash + Math.Max(0, totalBases - 1) * Info.LaterExpansionCashStep;
+					if (totalBases >= constructionYardLimit || playerResources.GetCashAndResources() < requiredCash)
+						return;
+				}
+			}
 
 			var mcvShouldHave = playerResources.GetCashAndResources() >= Info.BuildAdditionalMCVCashAmount
 				? Info.MinimumConstructionYardCount + Info.AdditionalConstructionYardCount : Info.MinimumConstructionYardCount;
+			if (expeditionEnabled)
+				mcvShouldHave = expeditionComplete
+					? Info.ConstructionYardLimitsByBotType.GetValueOrDefault(player.BotType, 2)
+					: Math.Min(mcvShouldHave, 2);
 
 			// If we only have 1 MCV and no conyard, we should be allowed to build another MCV.
 			// Otherwise, when an mcv is on the move and we should wait.
@@ -843,6 +906,9 @@ namespace OpenRA.Mods.Common.Traits
 				conyardRelocationTimeouts[conyard] = Info.ConyardRelocationTimeout;
 			if (resourceLocation.HasValue)
 			{
+				if (conyard == expeditionActor)
+					expeditionResourceLocation = resourceLocation;
+
 				foreach (var srp in suggestRefineryProduction)
 					srp.RequestLocation(resourceLocation.Value, deployLocation.Value, conyard);
 			}
@@ -877,6 +943,13 @@ namespace OpenRA.Mods.Common.Traits
 				activeMCVs[mcv] = checkloc;
 				if (resLoc != null)
 				{
+					if (Info.ExpeditionSitesByBotType.TryGetValue(player.BotType, out var siteLimit) &&
+						expeditionSuccessfulSites < siteLimit && constructionYards.Actors.Any(a => !a.IsDead))
+					{
+						expeditionActor = mcv;
+						expeditionResourceLocation = resLoc;
+					}
+
 					foreach (var srp in suggestRefineryProduction)
 						srp.RequestLocation(resLoc.Value, desiredLocation.Value, mcv);
 				}
@@ -903,6 +976,55 @@ namespace OpenRA.Mods.Common.Traits
 					n.UpdatedDefenseCenter(desiredLocation.Value);
 				}
 			}
+		}
+
+		void UpdateExpedition(IBot bot)
+		{
+			if (expeditionActor == null)
+				return;
+
+			if (!expeditionActor.IsInWorld || expeditionActor.IsDead)
+			{
+				var replacement = expeditionActor.ReplacedByActor;
+				if (replacement == null || replacement.IsDead || !replacement.IsInWorld)
+				{
+					expeditionActor = null;
+					expeditionResourceLocation = null;
+					return;
+				}
+
+				expeditionActor = replacement;
+			}
+
+			if (!expeditionResourceLocation.HasValue || !Info.ConstructionYardTypes.Contains(expeditionActor.Info.Name))
+				return;
+
+			if (!suggestRefineryProduction.Any(s => s.IsRequestSatisfied(expeditionActor)))
+				return;
+
+			var siteLimit = Info.ExpeditionSitesByBotType[player.BotType];
+			visitedExpeditionSites.Add(expeditionResourceLocation.Value);
+			var harvesterCount = world.ActorsHavingTrait<Harvester>().Count(a => a.Owner == player && !a.IsDead);
+			var harvesterLimitReached = Info.HarvesterLimitsByBotType.TryGetValue(player.BotType, out var harvesterLimit) &&
+				harvesterLimit > 0 && harvesterCount >= harvesterLimit;
+			if (expeditionSuccessfulSites + 1 >= siteLimit || harvesterLimitReached ||
+				playerResources.GetCashAndResources() < Info.ExpeditionRepeatCash)
+			{
+				foreach (var srp in suggestRefineryProduction)
+					srp.CompleteRequest(expeditionActor);
+
+				expeditionSuccessfulSites = siteLimit;
+				expeditionResourceLocation = null;
+				expeditionActor = null;
+				return;
+			}
+
+			if (world.WorldTick < nextExpeditionActionTick)
+				return;
+
+			nextExpeditionActionTick = world.WorldTick + Math.Max(20, Info.ScanForNewMcvInterval);
+			if (TryQueueConyardRelocation(bot, expeditionActor, false))
+				expeditionSuccessfulSites++;
 		}
 
 		// First, find a suitable expansion location according to current mode,
@@ -1034,6 +1156,61 @@ namespace OpenRA.Mods.Common.Traits
 			mcvFactories.Dispose();
 		}
 
+		List<MiniYamlNode> IGameSaveTraitData.IssueTraitData(Actor self)
+		{
+			if (IsTraitDisabled)
+				return null;
+
+			return new List<MiniYamlNode>
+			{
+				new("ExpeditionActor", FieldSaver.FormatValue(expeditionActor?.ActorID ?? 0u)),
+				new("ExpeditionResourceLocation", FieldSaver.FormatValue(expeditionResourceLocation)),
+				new("ExpeditionSuccessfulSites", FieldSaver.FormatValue(expeditionSuccessfulSites)),
+				new("NextExpeditionActionTick", FieldSaver.FormatValue(nextExpeditionActionTick)),
+				new("VisitedExpeditionSites", FieldSaver.FormatValue(visitedExpeditionSites.ToArray())),
+				new("FailedAttempts", FieldSaver.FormatValue(failedAttempts)),
+				new("LastFailedCheckSpot", FieldSaver.FormatValue(lastFailedCheckSpot))
+			};
+		}
+
+		void IGameSaveTraitData.ResolveTraitData(Actor self, MiniYaml data)
+		{
+			if (self.World.IsReplay)
+				return;
+
+			var actorNode = data.NodeWithKeyOrDefault("ExpeditionActor");
+			if (actorNode != null)
+			{
+				var actorId = FieldLoader.GetValue<uint>("ExpeditionActor", actorNode.Value.Value);
+				expeditionActor = actorId == 0 ? null : self.World.GetActorById(actorId);
+			}
+
+			var resourceNode = data.NodeWithKeyOrDefault("ExpeditionResourceLocation");
+			if (resourceNode != null)
+				expeditionResourceLocation = FieldLoader.GetValue<CPos?>("ExpeditionResourceLocation", resourceNode.Value.Value);
+
+			var sitesNode = data.NodeWithKeyOrDefault("ExpeditionSuccessfulSites");
+			if (sitesNode != null)
+				expeditionSuccessfulSites = FieldLoader.GetValue<int>("ExpeditionSuccessfulSites", sitesNode.Value.Value);
+
+			var actionNode = data.NodeWithKeyOrDefault("NextExpeditionActionTick");
+			if (actionNode != null)
+				nextExpeditionActionTick = FieldLoader.GetValue<int>("NextExpeditionActionTick", actionNode.Value.Value);
+
+			var visitedNode = data.NodeWithKeyOrDefault("VisitedExpeditionSites");
+			if (visitedNode != null)
+			{
+				visitedExpeditionSites.Clear();
+				visitedExpeditionSites.UnionWith(FieldLoader.GetValue<CPos[]>("VisitedExpeditionSites", visitedNode.Value.Value));
+			}
+			var failedNode = data.NodeWithKeyOrDefault("FailedAttempts");
+			if (failedNode != null)
+				failedAttempts = FieldLoader.GetValue<int>("FailedAttempts", failedNode.Value.Value);
+			var failedSpotNode = data.NodeWithKeyOrDefault("LastFailedCheckSpot");
+			if (failedSpotNode != null)
+				lastFailedCheckSpot = FieldLoader.GetValue<CPos?>("LastFailedCheckSpot", failedSpotNode.Value.Value);
+		}
+
 		void IBotBaseExpansion.UpdateExpansionParams(IBot bot, bool fallback, bool undeployEvenNoBase, Actor mustUndeploy)
 		{
 			if (mustUndeploy != null)
@@ -1059,6 +1236,12 @@ namespace OpenRA.Mods.Common.Traits
 		bool IBotBaseExpansion.IsConyardRelocationPending(Actor conyard)
 		{
 			return conyard != null && conyardRelocationTimeouts.ContainsKey(conyard);
+		}
+
+		bool IBotExclusiveConstructionQueue.IsExclusiveConstructionQueue(Actor producer)
+		{
+			return expeditionActor != null && producer != null &&
+				(expeditionActor == producer || expeditionActor.ReplacedByActor == producer || producer.ReplacedByActor == expeditionActor);
 		}
 	}
 }
