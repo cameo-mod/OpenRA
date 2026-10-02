@@ -55,7 +55,7 @@ namespace OpenRA.Graphics
 			SpriteCache = new SpriteCache(
 				fileSystem, modData.SpriteLoaders,
 				rc.SequenceBgraSheetSize, rc.SequenceIndexedSheetSize,
-				modData.SpriteCachePool);
+				modData.SpriteCachePool, downscaleSprites: Game.Settings.Graphics.LowVramSpriteScale);
 			using (new Support.PerfTimer("LoadSequences"))
 				images = Load(fileSystem, additionalSequences);
 		}

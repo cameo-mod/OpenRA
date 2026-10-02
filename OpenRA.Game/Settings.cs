@@ -316,6 +316,10 @@ namespace OpenRA
 			"Disable on systems with very limited RAM. Takes effect on next mod load.")]
 		public bool CrossMapSpriteCache = true;
 
+		[Desc("Halve the resolution of unit, terrain, and effect sprites to reduce GPU memory usage.",
+			"Intended for low-end systems that are short on VRAM. Takes effect on next mod load.")]
+		public bool LowVramSpriteScale = true;
+
 		public GraphicSettings Clone()
 		{
 			return (GraphicSettings)MemberwiseClone();

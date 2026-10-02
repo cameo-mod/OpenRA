@@ -24,9 +24,9 @@ namespace OpenRA.Mods.Common.UtilityCommands
 {
 	// Shared logic for analysing whether an (isometric) building's sprite fits within its footprint cells.
 	//
-	// The mod uses a Rectangular MapGrid (TileSize 48x48, TileScale 1024), so the world->screen projection
-	// is a straight orthographic map and a footprint of Dimensions NxM occupies a screen rectangle of
-	// 48*N by 48*M pixels with its top-left at the actor's TopLeft cell.
+	// The mod uses a Rectangular MapGrid (TileScale 1024), so the world->screen projection is a
+	// straight orthographic map and a footprint of Dimensions NxM occupies a screen rectangle of
+	// TileSize*N by TileSize*M pixels with its top-left at the actor's TopLeft cell.
 	//
 	// The analyser decodes the built/idle sprite CPU-side (no GL/window required), reproduces the engine's
 	// sprite placement maths, and reports how far the opaque silhouette spills past the footprint on each edge.
@@ -34,7 +34,7 @@ namespace OpenRA.Mods.Common.UtilityCommands
 	// spilling above the top edge (spires, antennae, smoke) is normal for isometric art and is allowed.
 	sealed class FootprintAnalyzer
 	{
-		const int TileSize = 48;
+		readonly int TileSize;
 		const int TileScale = 1024;
 
 		// Maps a sprite's logical TextureChannel index to the byte offset within a BGRA sheet texel,
@@ -74,6 +74,7 @@ namespace OpenRA.Mods.Common.UtilityCommands
 			public int OccupiedCells;
 			public int SuggestedDimX, SuggestedDimY;
 
+			public int TileSize;
 			public int FootW => DimX * TileSize;
 			public int FootH => DimY * TileSize;
 		}
@@ -86,6 +87,7 @@ namespace OpenRA.Mods.Common.UtilityCommands
 		{
 			this.modData = modData;
 			tileset = modData.DefaultTerrainInfo.Keys.First();
+			TileSize = modData.DefaultTerrainInfo[tileset].TileSize.Width;
 
 			// Parse every image's sequence definition once (cheap - YAML only, no sprite decode).
 			// Inheritance (Inherits:) is resolved by MiniYaml.Load.
@@ -114,7 +116,7 @@ namespace OpenRA.Mods.Common.UtilityCommands
 			pngBgra = null;
 			pngW = pngH = 0;
 
-			var r = new Result { Actor = actorInfo.Name };
+			var r = new Result { Actor = actorInfo.Name, TileSize = TileSize };
 			try
 			{
 				var building = actorInfo.TraitInfoOrDefault<BuildingInfo>();
@@ -181,9 +183,9 @@ namespace OpenRA.Mods.Common.UtilityCommands
 				var centerYw = 512 * r.DimY + lc.Y;
 				var centerZw = lc.Z;
 
-				const float F = (float)TileSize / TileScale;
-				var projX = F * centerXw;
-				var projY = F * (centerYw - centerZw);
+				var f = (float)TileSize / TileScale;
+				var projX = f * centerXw;
+				var projY = f * (centerYw - centerZw);
 
 				// Sprite quad (engine maths): top-left = proj + scale*(Offset - Size/2), size = scale*Size.
 				var sw = Math.Abs(sprite.Bounds.Width);
@@ -379,8 +381,8 @@ namespace OpenRA.Mods.Common.UtilityCommands
 					var dpxY = Math.Min(0f, footH - 1f - newBottom);
 
 					r.SolveScale = sSolve;
-					r.SolveLocalDX = (int)Math.Round(dpxX / F);
-					r.SolveLocalDY = (int)Math.Round(dpxY / F);
+					r.SolveLocalDX = (int)Math.Round(dpxX / f);
+					r.SolveLocalDY = (int)Math.Round(dpxY / f);
 				}
 
 				// Undersize metrics: which occupied footprint cells the base never covers, and the span of

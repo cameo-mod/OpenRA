@@ -86,6 +86,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		const string ScreenShakeLabel = "checkbox-screen-shake";
 		[FluentReference]
 		const string GroundFireSmokeLabel = "checkbox-ground-fire-smoke";
+		[FluentReference]
+		const string LowVramSpriteScaleLabel = "checkbox-low-vram-sprite-scale";
 		static readonly int OriginalVideoDisplay;
 		static readonly WindowMode OriginalGraphicsMode;
 		static readonly int2 OriginalGraphicsWindowedSize;
@@ -168,6 +170,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			SettingsUtils.BindCheckboxPref(panel, "FRAME_LIMIT_CHECKBOX", ds, "CapFramerate");
 			SettingsUtils.BindCheckboxPref(panel, "FRAME_LIMIT_GAMESPEED_CHECKBOX", ds, "CapFramerateToGameFps");
 			SettingsUtils.BindCheckboxPref(panel, "CROSSMAPSPRITECACHE_CHECKBOX", ds, "CrossMapSpriteCache");
+			SettingsUtils.BindCheckboxPref(panel, "LOW_VRAM_SPRITE_SCALE_CHECKBOX", ds, "LowVramSpriteScale");
 			SettingsUtils.BindIntSliderPref(panel, "FRAME_LIMIT_SLIDER", ds, "MaxFramerate");
 			SettingsUtils.BindSliderPref(panel, "TERRAIN_LIGHTING_SLIDER", ds, "TerrainLightingIntensity");
 			var lightingLabel = new CachedTransform<int, string>(pct => FluentProvider.GetMessage(TerrainLightingLabel, "pct", pct));

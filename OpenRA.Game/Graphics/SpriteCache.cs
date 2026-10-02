@@ -28,6 +28,7 @@ namespace OpenRA.Graphics
 		readonly ISpriteLoader[] loaders;
 		readonly IReadOnlyFileSystem fileSystem;
 		readonly SpriteCachePool pool;
+		readonly bool downscaleSprites;
 
 		readonly Dictionary<
 			int,
@@ -42,8 +43,9 @@ namespace OpenRA.Graphics
 
 		public SpriteCache(
 			IReadOnlyFileSystem fileSystem, ISpriteLoader[] loaders, int bgraSheetSize, int indexedSheetSize,
-			SpriteCachePool pool = null, int bgraSheetMargin = 1, int indexedSheetMargin = 1)
+			SpriteCachePool pool = null, int bgraSheetMargin = 1, int indexedSheetMargin = 1, bool downscaleSprites = false)
 		{
+			this.downscaleSprites = downscaleSprites;
 			if (pool != null)
 			{
 				// Borrow shared builders so atlases persist across map loads.
@@ -255,6 +257,8 @@ namespace OpenRA.Graphics
 								var frame = loadedFrames[i];
 								if (rs.AdjustFrame != null)
 									frame = rs.AdjustFrame(frame, j++, total);
+								if (downscaleSprites)
+									frame = SpriteFrameScaler.Downscale(frame);
 								pendingResolve.Add((filename, i, rs.Premultiplied, rs.CacheKey, frame, resolved));
 							}
 						}
