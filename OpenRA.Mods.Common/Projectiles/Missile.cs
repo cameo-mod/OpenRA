@@ -103,6 +103,10 @@ namespace OpenRA.Mods.Common.Projectiles
 		[Desc("Run out of fuel after covering this distance. Zero for defaulting to weapon range. Negative for unlimited fuel.")]
 		public readonly WDist RangeLimit = WDist.Zero;
 
+		[Desc("Run out of fuel after covering weapon range times this percentage. Range modifiers are applied after.",
+			"Ignored when RangeLimit is non-zero. Zero for defaulting to weapon range.")]
+		public readonly int RangeLimitPercent = 0;
+
 		[Desc("Explode when running out of fuel.")]
 		public readonly bool ExplodeWhenEmpty = true;
 
@@ -268,7 +272,9 @@ namespace OpenRA.Mods.Common.Projectiles
 			hFacing = args.Facing.Facing;
 			gravity = new WVec(0, 0, -info.Gravity);
 			targetPosition = args.PassiveTarget;
-			var limit = info.RangeLimit != WDist.Zero ? info.RangeLimit : args.Weapon.Range;
+			var limit = info.RangeLimit != WDist.Zero ? info.RangeLimit
+				: info.RangeLimitPercent > 0 ? new WDist((int)((long)args.Weapon.Range.Length * info.RangeLimitPercent / 100))
+				: args.Weapon.Range;
 			rangeLimit = new WDist(Util.ApplyPercentageModifiers(limit.Length, args.RangeModifiers));
 			minLaunchSpeed = info.MinimumLaunchSpeed.Length > -1 ? info.MinimumLaunchSpeed.Length : info.Speed.Length;
 			maxLaunchSpeed = info.MaximumLaunchSpeed.Length > -1 ? info.MaximumLaunchSpeed.Length : info.Speed.Length;
