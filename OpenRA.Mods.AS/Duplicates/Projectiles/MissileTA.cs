@@ -26,7 +26,7 @@ using Util = OpenRA.Mods.Common.Util;
 namespace OpenRA.Mods.TA.Projectiles
 {
 	[Desc("Missile used by TA")]
-	public class MissileTAInfo : IProjectileInfo
+	public class MissileTAInfo : IRangeLimitedProjectileInfo
 	{
 		[Desc("Name of the image containing the projectile sequence.")]
 		public readonly string Image = null;
@@ -128,6 +128,13 @@ namespace OpenRA.Mods.TA.Projectiles
 		[Desc("Run out of fuel after covering weapon range times this percentage. Range modifiers are applied after.",
 			"Ignored when RangeLimit is non-zero. Zero for defaulting to weapon range.")]
 		public readonly int RangeLimitPercent = 0;
+
+		public WDist EffectiveRangeLimit(WDist weaponRange)
+		{
+			return RangeLimit != WDist.Zero ? RangeLimit
+				: RangeLimitPercent > 0 ? new WDist((int)((long)weaponRange.Length * RangeLimitPercent / 100))
+				: weaponRange;
+		}
 
 		[Desc("Explode when running out of fuel.")]
 		public readonly bool ExplodeWhenEmpty = false;
@@ -327,9 +334,7 @@ namespace OpenRA.Mods.TA.Projectiles
 			hFacing = args.Facing.Facing;
 			gravity = new WVec(0, 0, -info.Gravity);
 			targetPosition = args.PassiveTarget;
-			var limit = info.RangeLimit != WDist.Zero ? info.RangeLimit
-				: info.RangeLimitPercent > 0 ? new WDist((int)((long)args.Weapon.Range.Length * info.RangeLimitPercent / 100))
-				: args.Weapon.Range;
+			var limit = info.EffectiveRangeLimit(args.Weapon.Range);
 			rangeLimit = new WDist(Util.ApplyPercentageModifiers(limit.Length, args.RangeModifiers));
 			minLaunchSpeed = info.MinimumLaunchSpeed.Length > -1 ? info.MinimumLaunchSpeed.Length : info.Speed.Length;
 			maxLaunchSpeed = info.MaximumLaunchSpeed.Length > -1 ? info.MaximumLaunchSpeed.Length : info.Speed.Length;

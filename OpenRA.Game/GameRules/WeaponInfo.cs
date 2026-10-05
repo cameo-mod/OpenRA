@@ -71,6 +71,14 @@ namespace OpenRA.GameRules
 	public interface IProjectile : IEffect { }
 	public interface IProjectileInfo { IProjectile Create(ProjectileArgs args); }
 
+	public interface IRangeLimitedProjectileInfo : IProjectileInfo
+	{
+		/// <summary>Resolved fuel limit for a shot from a weapon of this range: the fixed
+		/// RangeLimit when non-zero (negative means unlimited), else weapon range times
+		/// RangeLimitPercent/100 when positive, else the weapon range itself.</summary>
+		WDist EffectiveRangeLimit(WDist weaponRange);
+	}
+
 	public sealed class WeaponInfo
 	{
 		[Desc("The maximum range the weapon can fire.")]
