@@ -10,7 +10,7 @@
 #endregion
 
 using System;
-using OpenRA.Mods.Common.Projectiles;
+using OpenRA.GameRules;
 using OpenRA.Server;
 
 namespace OpenRA.Mods.Common.Lint
@@ -33,8 +33,12 @@ namespace OpenRA.Mods.Common.Lint
 			{
 				var range = weaponInfo.Value.Range;
 
-				if (weaponInfo.Value.Projectile is MissileInfo missile && missile.RangeLimit > WDist.Zero && missile.RangeLimit < range)
-					emitError($"Weapon `{weaponInfo.Key}`: projectile RangeLimit lower than weapon range.");
+				if (weaponInfo.Value.Projectile is IRangeLimitedProjectileInfo limited)
+				{
+					var limit = limited.EffectiveRangeLimit(range);
+					if (limit > WDist.Zero && limit < range)
+						emitError($"Weapon `{weaponInfo.Key}`: projectile RangeLimit lower than weapon range.");
+				}
 			}
 		}
 	}
