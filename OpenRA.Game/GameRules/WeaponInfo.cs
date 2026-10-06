@@ -79,6 +79,14 @@ namespace OpenRA.GameRules
 		WDist EffectiveRangeLimit(WDist weaponRange);
 	}
 
+	public static class ProjectileInfoUtils
+	{
+		public static int CloseEnoughRadius(bool fromSpeed, int speed, WDist fixedRadius)
+		{
+			return fromSpeed ? speed : fixedRadius.Length;
+		}
+	}
+
 	public sealed class WeaponInfo
 	{
 		[Desc("The maximum range the weapon can fire.")]

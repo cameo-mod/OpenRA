@@ -195,10 +195,14 @@ namespace OpenRA.Mods.Common.Projectiles
 			"the missile enters the radius of the current speed around the target.")]
 		public readonly bool AllowSnapping = false;
 
-		[Desc("Explodes when inside this proximity radius to target.",
-			"Note: If this value is lower than the missile speed, this check might",
-			"not trigger fast enough, causing the missile to fly past the target.")]
+		[Desc("Fallback proximity radius to target when CloseEnoughFromSpeed is disabled.")]
 		public readonly WDist CloseEnough = new(298);
+
+		[Desc("Use the missile's current speed as the proximity radius for detonation and airburst checks.")]
+		public readonly bool CloseEnoughFromSpeed = false;
+
+		[Desc("When detonating near a valid locked target, place the impact at the target position instead of the missile position.")]
+		public readonly bool SnapImpactToTarget = false;
 
 		[Desc("Detonate at the closest approach to the aim point once a locked-on target is lost",
 			"(e.g. destroyed mid-flight). Without this the missile stops steering and flies straight",
@@ -955,13 +959,14 @@ namespace OpenRA.Mods.Common.Projectiles
 
 			var cell = world.Map.CellContaining(pos);
 			var height = world.Map.DistanceAboveTerrain(pos);
+			var closeEnough = ProjectileInfoUtils.CloseEnoughRadius(info.CloseEnoughFromSpeed, speed, info.CloseEnough);
 			shouldExplode |= height.Length < 0 // Hit the ground
-				|| relTarDist < info.CloseEnough.Length // Within range
+				|| relTarDist < closeEnough // Within range
 				|| targetLost // Lost the locked-on target and reached the closest approach to its last position
 				|| (info.ExplodeWhenEmpty && rangeLimit >= WDist.Zero && distanceCovered > rangeLimit) // Ran out of fuel
 				|| !world.Map.Contains(cell) // This also avoids an IndexOutOfRangeException in GetTerrainInfo below.
 				|| (!string.IsNullOrEmpty(info.BoundToTerrainType) && world.Map.GetTerrainInfo(cell).Type != info.BoundToTerrainType) // Hit incompatible terrain
-				|| (height.Length < info.AirburstAltitude.Length && relTarHorDist < info.CloseEnough.Length); // Airburst
+				|| (height.Length < info.AirburstAltitude.Length && relTarHorDist < closeEnough); // Airburst
 
 			if (shouldExplode)
 				Explode(world);
@@ -978,13 +983,17 @@ namespace OpenRA.Mods.Common.Projectiles
 			if (ticks <= info.Arm)
 				return;
 
+			var impactPosition = pos;
+			if (info.SnapImpactToTarget && lockOn && args.GuidedTarget.IsValidFor(args.SourceActor))
+				impactPosition = args.Weapon.TargetActorCenter ? args.GuidedTarget.CenterPosition : args.GuidedTarget.Positions.ClosestToIgnoringPath(args.Source);
+
 			var warheadArgs = new WarheadArgs(args)
 			{
 				ImpactOrientation = new WRot(WAngle.Zero, WAngle.FromFacing(vFacing), WAngle.FromFacing(hFacing)),
-				ImpactPosition = pos,
+				ImpactPosition = impactPosition,
 			};
 
-			args.Weapon.Impact(Target.FromPos(pos), warheadArgs);
+			args.Weapon.Impact(Target.FromPos(impactPosition), warheadArgs);
 		}
 
 		public IEnumerable<IRenderable> Render(WorldRenderer wr)

@@ -214,8 +214,14 @@ namespace OpenRA.Mods.TA.Projectiles
 			"the missile enters the radius of the current speed around the target.")]
 		public readonly bool AllowSnapping = false;
 
-		[Desc("Explodes when inside this proximity radius to target.")]
+		[Desc("Fallback proximity radius to target when CloseEnoughFromSpeed is disabled.")]
 		public readonly WDist CloseEnough = new(298);
+
+		[Desc("Use the missile's current speed as the proximity radius for detonation and airburst checks.")]
+		public readonly bool CloseEnoughFromSpeed = false;
+
+		[Desc("When detonating near a valid locked target, place the impact at the target position instead of the missile position.")]
+		public readonly bool SnapImpactToTarget = false;
 
 		[Desc("Altitude where this bullet should explode when reached.",
 			"Negative values allow this bullet to pass cliffs and terrain bumps.")]
@@ -279,7 +285,6 @@ namespace OpenRA.Mods.TA.Projectiles
 		readonly int minLaunchSpeed;
 		readonly int maxLaunchSpeed;
 		readonly int maxSpeed;
-		readonly long closeEnoughLengthSquare;
 		readonly WAngle minLaunchAngle;
 		readonly WAngle maxLaunchAngle;
 		WDist cruiseHt;
@@ -341,7 +346,6 @@ namespace OpenRA.Mods.TA.Projectiles
 			maxSpeed = info.Speed.Length;
 			minLaunchAngle = info.MinimumLaunchAngle;
 			maxLaunchAngle = info.MaximumLaunchAngle;
-			closeEnoughLengthSquare = (long)info.CloseEnough.Length * info.CloseEnough.Length;
 			explodeAltitude = info.ExplodeUnderThisAltitude.Length;
 
 			world = args.SourceActor.World;
@@ -1033,7 +1037,8 @@ namespace OpenRA.Mods.TA.Projectiles
 			// If missile can reach and hit the target when not moving, just explode at where it are.
 			var shouldExplode = false;
 			var reachAirburstRadius = false;
-			if (state != States.Freefall && relTarDist <= info.CloseEnough.Length)
+			var closeEnough = ProjectileInfoUtils.CloseEnoughRadius(info.CloseEnoughFromSpeed, speed, info.CloseEnough);
+			if (state != States.Freefall && relTarDist <= closeEnough)
 			{
 				shouldExplode = true;
 			}
@@ -1068,6 +1073,8 @@ namespace OpenRA.Mods.TA.Projectiles
 					else
 					{
 						pos += move;
+						closeEnough = ProjectileInfoUtils.CloseEnoughRadius(info.CloseEnoughFromSpeed, speed, info.CloseEnough);
+						var closeEnoughLengthSquare = (long)closeEnough * closeEnough;
 						if (!(shouldExplode = (pos - targetPosition - offset).LengthSquared <= closeEnoughLengthSquare)
 							&& info.AirburstAltitude != WDist.Zero && (pos - targetPosition - offset).HorizontalLengthSquared <= closeEnoughLengthSquare)
 						{
@@ -1124,13 +1131,17 @@ namespace OpenRA.Mods.TA.Projectiles
 
 			world.AddFrameEndTask(w => w.Remove(this));
 
+			var impactPosition = pos;
+			if (info.SnapImpactToTarget && lockOn && args.GuidedTarget.IsValidFor(args.SourceActor))
+				impactPosition = args.Weapon.TargetActorCenter ? args.GuidedTarget.CenterPosition : args.GuidedTarget.Positions.ClosestToIgnoringPath(args.Source);
+
 			var warheadArgs = new WarheadArgs(args)
 			{
 				ImpactOrientation = new WRot(WAngle.Zero, WAngle.FromFacing(vFacing), WAngle.FromFacing(hFacing)),
-				ImpactPosition = pos,
+				ImpactPosition = impactPosition,
 			};
 
-			args.Weapon.Impact(Target.FromPos(pos), warheadArgs);
+			args.Weapon.Impact(Target.FromPos(impactPosition), warheadArgs);
 		}
 
 		public IEnumerable<IRenderable> Render(WorldRenderer wr)
