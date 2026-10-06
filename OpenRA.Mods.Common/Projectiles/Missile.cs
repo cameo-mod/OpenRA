@@ -104,14 +104,12 @@ namespace OpenRA.Mods.Common.Projectiles
 		public readonly WDist RangeLimit = WDist.Zero;
 
 		[Desc("Run out of fuel after covering weapon range times this percentage. Range modifiers are applied after.",
-			"Ignored when RangeLimit is non-zero. Zero for defaulting to weapon range.")]
+			"Ignored when RangeLimit is non-zero. Zero defaults to weapon range; negative means unlimited.")]
 		public readonly int RangeLimitPercent = 0;
 
 		public WDist EffectiveRangeLimit(WDist weaponRange)
 		{
-			return RangeLimit != WDist.Zero ? RangeLimit
-				: RangeLimitPercent > 0 ? new WDist((int)((long)weaponRange.Length * RangeLimitPercent / 100))
-				: weaponRange;
+			return ProjectileInfoUtils.EffectiveRangeLimit(RangeLimit, weaponRange, RangeLimitPercent);
 		}
 
 		[Desc("Explode when running out of fuel.")]

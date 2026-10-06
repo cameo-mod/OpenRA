@@ -81,6 +81,17 @@ namespace OpenRA.GameRules
 
 	public static class ProjectileInfoUtils
 	{
+		public static WDist EffectiveRangeLimit(WDist fixedLimit, WDist weaponRange, int percent)
+		{
+			if (fixedLimit != WDist.Zero)
+				return fixedLimit;
+
+			if (percent < 0)
+				return new WDist(-1);
+
+			return percent > 0 ? new WDist((int)((long)weaponRange.Length * percent / 100)) : weaponRange;
+		}
+
 		public static int CloseEnoughRadius(bool fromSpeed, int speed, WDist fixedRadius)
 		{
 			return fromSpeed ? speed : fixedRadius.Length;

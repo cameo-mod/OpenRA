@@ -17,6 +17,16 @@ namespace OpenRA.Test
 	[TestFixture]
 	sealed class ProjectileInfoTest
 	{
+		[TestCase(TestName = "RangeLimitPercent defaults to weapon range, scales range, and preserves unlimited exceptions")]
+		public void RangeLimitPercentUsesExpectedPrecedence()
+		{
+			var weaponRange = new WDist(10000);
+			Assert.That(ProjectileInfoUtils.EffectiveRangeLimit(WDist.Zero, weaponRange, 0), Is.EqualTo(weaponRange));
+			Assert.That(ProjectileInfoUtils.EffectiveRangeLimit(WDist.Zero, weaponRange, 150), Is.EqualTo(new WDist(15000)));
+			Assert.That(ProjectileInfoUtils.EffectiveRangeLimit(WDist.Zero, weaponRange, -1), Is.EqualTo(new WDist(-1)));
+			Assert.That(ProjectileInfoUtils.EffectiveRangeLimit(new WDist(1200), weaponRange, 150), Is.EqualTo(new WDist(1200)));
+		}
+
 		[TestCase(TestName = "CloseEnoughFromSpeed follows current speed deterministically, including acceleration")]
 		public void CloseEnoughFromSpeedUsesCurrentSpeed()
 		{
