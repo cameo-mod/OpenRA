@@ -236,7 +236,7 @@ namespace OpenRA.Mods.Common.Traits
 		public abstract Activity GetAttackActivity(
 			Actor self, AttackSource source, in Target newTarget, bool allowMove, bool forceAttack, Color? targetLineColor = null);
 
-		public bool HasAnyValidWeapons(in Target t, bool checkForCenterTargetingWeapons = false, bool reloadingIsInvalid = false)
+		public virtual bool HasAnyValidWeapons(in Target t, bool checkForCenterTargetingWeapons = false, bool reloadingIsInvalid = false)
 		{
 			if (IsTraitDisabled)
 				return false;
@@ -307,7 +307,7 @@ namespace OpenRA.Mods.Common.Traits
 			return max;
 		}
 
-		public WDist GetMinimumRangeVersusTarget(in Target target)
+		public virtual WDist GetMinimumRangeVersusTarget(in Target target)
 		{
 			if (IsTraitDisabled)
 				return WDist.Zero;
@@ -333,7 +333,7 @@ namespace OpenRA.Mods.Common.Traits
 			return min != WDist.MaxValue ? min : WDist.Zero;
 		}
 
-		public WDist GetMaximumRangeVersusTarget(in Target target)
+		public virtual WDist GetMaximumRangeVersusTarget(in Target target)
 		{
 			if (IsTraitDisabled)
 				return WDist.Zero;
@@ -368,7 +368,7 @@ namespace OpenRA.Mods.Common.Traits
 		}
 
 		// Enumerates all armaments, that this actor possesses, that can be used against Target t
-		public IEnumerable<Armament> ChooseArmamentsForTarget(Target t, bool forceAttack)
+		public virtual IEnumerable<Armament> ChooseArmamentsForTarget(Target t, bool forceAttack)
 		{
 			// If force-fire is not used, and the target requires force-firing or the target is
 			// terrain or invalid, no armaments can be used

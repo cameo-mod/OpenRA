@@ -190,7 +190,7 @@ namespace OpenRA.Mods.Common.Traits
 			: base(info)
 		{
 			var self = init.Self;
-			ActiveAttackBases = self.TraitsImplementing<AttackBase>().ToArray().Where(t => !t.IsTraitDisabled);
+			ActiveAttackBases = self.TraitsImplementing<AttackBase>().ToArray().Where(t => !t.IsTraitDisabled && t is not IIndependentAutoTarget);
 
 			Stance = init.GetValue<StanceInit, UnitStance>(self.Owner.IsBot || !self.Owner.Playable ? info.InitialStanceAI : info.InitialStance);
 
@@ -335,6 +335,27 @@ namespace OpenRA.Mods.Common.Traits
 			return Target.Invalid;
 		}
 
+		/// <summary>Read-only station scan using this occupant's priorities and selected arms.
+		/// The station owns its synchronized cadence; this does not touch nextScanTime or RNG.</summary>
+		public Target ScanForTarget(Actor origin, IReadOnlyList<Armament> stationArmaments,
+			Func<Target, bool> canFire, bool targetFrozenActors = false, WDist extraRange = default)
+		{
+			if (IsTraitDisabled || Stance < UnitStance.Defend || stationArmaments.Count == 0)
+				return Target.Invalid;
+			var stances = PlayerRelationship.None;
+			var range = WDist.Zero;
+			foreach (var armament in stationArmaments)
+			{
+				if (armament.IsTraitDisabled || armament.IsTraitPaused)
+					continue;
+				stances |= armament.Info.TargetRelationships;
+				if (range < armament.MaxRange())
+					range = armament.MaxRange();
+			}
+			return stances == PlayerRelationship.None ? Target.Invalid
+				: ChooseTarget(origin, null, stances, range + extraRange, false, false, stationArmaments, canFire, targetFrozenActors);
+		}
+
 		public void ScanAndAttack(Actor self, bool allowMove, bool allowTurn)
 		{
 			var target = ScanForTarget(self, allowMove, allowTurn);
@@ -367,7 +388,8 @@ namespace OpenRA.Mods.Common.Traits
 			});
 		}
 
-		Target ChooseTarget(Actor self, AttackBase ab, PlayerRelationship attackStances, WDist scanRange, bool allowMove, bool allowTurn)
+		Target ChooseTarget(Actor self, AttackBase ab, PlayerRelationship attackStances, WDist scanRange, bool allowMove, bool allowTurn,
+			IReadOnlyList<Armament> stationArmaments = null, Func<Target, bool> canFire = null, bool targetFrozenActors = false)
 		{
 			var chosenTarget = Target.Invalid;
 			var chosenTargetPriority = int.MinValue;
@@ -380,7 +402,7 @@ namespace OpenRA.Mods.Common.Traits
 			var targetsInRange = self.World.FindActorsInCircle(self.CenterPosition, scanRange)
 				.Select(Target.FromActor);
 
-			if (allowMove || ab.Info.TargetFrozenActors)
+			if (allowMove || targetFrozenActors || ab?.Info.TargetFrozenActors == true)
 				targetsInRange = targetsInRange
 					.Concat(self.Owner.FrozenActorLayer.FrozenActorsInCircle(self.World, self.CenterPosition, scanRange)
 					.Select(Target.FromFrozenActor));
@@ -449,8 +471,8 @@ namespace OpenRA.Mods.Common.Traits
 					continue;
 
 				// Make sure that we can actually fire on the actor
-				var armaments = ab.ChooseArmamentsForTarget(target, false);
-				if (!allowMove)
+				var armaments = stationArmaments ?? ab.ChooseArmamentsForTarget(target, false);
+				if (!allowMove && stationArmaments == null)
 				{
 					// PERF: This lambda captures, contain it within a local function to prevent
 					// the compiler allocating the helper class at the top of the loop.
@@ -465,7 +487,7 @@ namespace OpenRA.Mods.Common.Traits
 				if (!armaments.Any())
 					continue;
 
-				if (!allowTurn && !ab.TargetInFiringArc(self, target, ab.Info.FacingTolerance))
+				if (canFire != null ? !canFire(target) : !allowTurn && !ab.TargetInFiringArc(self, target, ab.Info.FacingTolerance))
 					continue;
 
 				// Evaluate whether we want to target this actor

@@ -91,7 +91,7 @@ namespace OpenRA.Mods.AS.Traits
 
 	public class Garrisonable : PausableConditionalTrait<GarrisonableInfo>, IIssueOrder, IResolveOrder, IOrderVoice,
 		INotifyKilled, INotifyOwnerChanged, INotifySold, INotifyActorDisposing, IIssueDeployOrder,
-		ITransformActorInitModifier, INotifyPassengersDamage
+		ITransformActorInitModifier, INotifyPassengersDamage, IFirePortOccupantProvider
 	{
 		readonly Actor self;
 		readonly List<Actor> garrisonable = [];
@@ -109,6 +109,7 @@ namespace OpenRA.Mods.AS.Traits
 		bool initialised;
 
 		public IEnumerable<Actor> Garrisoners { get { return garrisonable; } }
+		IEnumerable<Actor> IFirePortOccupantProvider.Occupants => garrisonable;
 		public int GarrisonerCount { get { return garrisonable.Count; } }
 
 		enum State { Free, Locked }
@@ -185,6 +186,8 @@ namespace OpenRA.Mods.AS.Traits
 
 					foreach (var npe in self.TraitsImplementing<INotifyGarrisonerEntered>())
 						npe.OnGarrisonerEntered(self, c);
+					foreach (var observer in self.TraitsImplementing<INotifyFirePortOccupantEntered>())
+						observer.OnFirePortOccupantEntered(self, c);
 				}
 
 				initialised = true;
@@ -344,6 +347,8 @@ namespace OpenRA.Mods.AS.Traits
 
 			foreach (var npe in self.TraitsImplementing<INotifyGarrisonerExited>())
 				npe.OnGarrisonerExited(self, passenger);
+			foreach (var observer in self.TraitsImplementing<INotifyFirePortOccupantExited>())
+				observer.OnFirePortOccupantExited(self, passenger);
 
 			foreach (var nec in passenger.TraitsImplementing<INotifyExitedGarrison>())
 				nec.OnExitedGarrison(passenger, self);
@@ -395,6 +400,8 @@ namespace OpenRA.Mods.AS.Traits
 
 				foreach (var npe in self.TraitsImplementing<INotifyGarrisonerEntered>())
 					npe.OnGarrisonerEntered(self, a);
+				foreach (var observer in self.TraitsImplementing<INotifyFirePortOccupantEntered>())
+					observer.OnFirePortOccupantEntered(self, a);
 			}
 
 			if (Info.GarrisonerConditions.TryGetValue(a.Info.Name, out var garrisonerCondition))

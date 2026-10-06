@@ -11,225 +11,509 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
+using OpenRA.Activities;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common.Traits.Render;
 using OpenRA.Primitives;
-
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
 {
-	public class FirePort
+	public sealed class FirePort
 	{
 		public WVec Offset;
 		public WAngle Yaw;
 		public WAngle Cone;
 	}
-
-	[Desc("Cargo can fire their weapons out of fire ports.")]
-	public class AttackGarrisonedInfo : AttackFollowInfo, IRulesetLoaded, Requires<CargoInfo>
+	/// <summary>Independent exclusive fire stations for cargo and garrison occupants.</summary>
+	public class AttackGarrisonedInfo : AttackFollowInfo
 	{
 		[FieldLoader.Require]
-		[Desc("Fire port offsets in local coordinates.")]
-		public readonly ImmutableArray<WVec> PortOffsets = default;
-
-		[FieldLoader.Require]
-		[Desc("Fire port yaw angles.")]
-		public readonly ImmutableArray<WAngle> PortYaws = default;
-
-		[FieldLoader.Require]
-		[Desc("Fire port yaw cone angle.")]
-		public readonly ImmutableArray<WAngle> PortCones = default;
-
-		public ImmutableArray<FirePort> Ports { get; private set; }
-
+		public readonly WVec[] PortOffsets = null;
+		public readonly WAngle[] PortYaws = null;
+		public readonly WAngle[] PortCones = null;
 		[PaletteReference]
 		public readonly string MuzzlePalette = "effect";
+		[Desc("Fixed synchronized interval between passenger opportunity scans. No random port or scan selection.")]
+		public readonly int ScanInterval = 5;
+		[Desc("Explicit acknowledgement that occupants exceeding available ports cannot fire.")]
+		public readonly bool NoFireOverflow = false;
+		public IReadOnlyList<FirePort> Ports { get; private set; }
 
-		public override object Create(ActorInitializer init) { return new AttackGarrisoned(init.Self, this); }
-		public override void RulesetLoaded(Ruleset rules, ActorInfo ai)
+		public override object Create(ActorInitializer init) => new AttackGarrisoned(init.Self, this);
+		public override void RulesetLoaded(Ruleset rules, ActorInfo actor)
 		{
-			if (PortOffsets.Length == 0)
-				throw new YamlException("PortOffsets must have at least one entry.");
-
-			if (PortYaws.Length != PortOffsets.Length)
-				throw new YamlException("PortYaws must define an angle for each port.");
-
-			if (PortCones.Length != PortOffsets.Length)
-				throw new YamlException("PortCones must define an angle for each port.");
-
-			var ports = new FirePort[PortOffsets.Length];
-
-			for (var i = 0; i < PortOffsets.Length; i++)
+			if (PortOffsets == null || PortOffsets.Length == 0)
+				throw new YamlException($"{actor.Name}: AttackGarrisoned needs at least one port.");
+			if (PortYaws != null && PortYaws.Length != PortOffsets.Length)
+				throw new YamlException($"{actor.Name}: PortYaws length must match PortOffsets.");
+			if (PortCones != null && PortCones.Length != PortOffsets.Length)
+				throw new YamlException($"{actor.Name}: PortCones length must match PortOffsets.");
+			if (ScanInterval < 1)
+				throw new YamlException($"{actor.Name}: ScanInterval must be positive.");
+			Ports = PortOffsets.Select((offset, i) => new FirePort
 			{
-				ports[i] = new FirePort
-				{
-					Offset = PortOffsets[i],
-					Yaw = PortYaws[i],
-					Cone = PortCones[i],
-				};
-			}
-
-			Ports = ports.ToImmutableArray();
-
-			base.RulesetLoaded(rules, ai);
+				Offset = offset,
+				Yaw = PortYaws?[i] ?? WAngle.Zero,
+				Cone = PortCones?[i] ?? new WAngle(512),
+			}).ToArray();
+			base.RulesetLoaded(rules, actor);
 		}
 	}
 
-	public class AttackGarrisoned : AttackFollow, INotifyPassengerEntered, INotifyPassengerExited, IRender
+	/// <summary>One stable port binding; synchronized through the containing trait's station hash.</summary>
+	public sealed class FirePortStation
+	{
+		public readonly int PortIndex;
+		public Actor Occupant { get; internal set; }
+		internal Armament[] Arms = [];
+		internal AutoTarget AutoTarget;
+		internal IFacing Facing;
+		internal IPositionable Position;
+		internal RenderSprites Render;
+		public Target RequestedTarget { get; internal set; }
+		public Target OpportunityTarget { get; internal set; }
+		internal bool RequestedForce, OpportunityForce, Persistent, Retaliating;
+		internal int ScanTicks;
+		internal readonly List<AnimationWithOffset> Muzzles = [];
+		public FirePortStation(int index) { PortIndex = index; }
+	}
+
+	/// <summary>Uses AttackBase orders but never AttackFollow's shared opportunity target.</summary>
+	public class AttackGarrisoned : AttackBase, IIndependentAutoTarget, IFirePortAttack,
+		INotifyPassengerEntered, INotifyPassengerExited, INotifyFirePortOccupantEntered, INotifyFirePortOccupantExited,
+		INotifyOwnerChanged, INotifyStanceChanged, INotifyActorDisposing, INotifyDamage, IRender
 	{
 		public new readonly AttackGarrisonedInfo Info;
+		readonly Actor host;
+		readonly FirePortStation[] stations;
 		INotifyAttack[] notifyAttacks;
-		readonly Lazy<BodyOrientation> coords;
-		readonly List<Armament> armaments;
-		readonly List<AnimationWithOffset> muzzles;
-		readonly Dictionary<Actor, IFacing> paxFacing;
-		readonly Dictionary<Actor, IPositionable> paxPos;
-		readonly Dictionary<Actor, RenderSprites> paxRender;
+		BodyOrientation coords;
+		PassengerFirePortAttackActivity activeActivity;
+		public IReadOnlyList<FirePortStation> Stations => stations;
 
-		public AttackGarrisoned(Actor self, AttackGarrisonedInfo info)
-			: base(self, info)
+		public AttackGarrisoned(Actor self, AttackGarrisonedInfo info) : base(self, info)
 		{
+			host = self;
 			Info = info;
-			coords = Exts.Lazy(self.Trait<BodyOrientation>);
-			armaments = [];
-			muzzles = [];
-			paxFacing = [];
-			paxPos = [];
-			paxRender = [];
+			stations = Enumerable.Range(0, info.PortOffsets.Length).Select(i => new FirePortStation(i)).ToArray();
+		}
+
+		[VerifySync]
+		public int StationHash
+		{
+			get
+			{
+				unchecked
+				{
+					var hash = 17;
+					if (activeActivity != null)
+					{
+						hash = hash * 31 + Sync.HashTarget(activeActivity.CurrentTarget);
+						hash = hash * 31 + (activeActivity.ForceAttack ? 1 : 0);
+					}
+					foreach (var port in stations)
+					{
+						hash = hash * 31 + port.PortIndex;
+						hash = hash * 31 + (int)(port.Occupant?.ActorID ?? 0);
+						hash = hash * 31 + Sync.HashTarget(port.RequestedTarget);
+						hash = hash * 31 + (int)port.RequestedTarget.Type;
+						hash = hash * 31 + (int)(port.RequestedTarget.FrozenActor?.ID ?? 0);
+						hash = hash * 31 + Sync.HashTarget(port.OpportunityTarget);
+						hash = hash * 31 + (int)port.OpportunityTarget.Type;
+						hash = hash * 31 + (int)(port.OpportunityTarget.FrozenActor?.ID ?? 0);
+						hash = hash * 31 + port.ScanTicks;
+						hash = hash * 31 + (port.RequestedForce ? 1 : 0) + (port.OpportunityForce ? 2 : 0) + (port.Persistent ? 4 : 0) + (port.Retaliating ? 8 : 0);
+					}
+					return hash;
+				}
+			}
 		}
 
 		protected override void Created(Actor self)
 		{
 			notifyAttacks = self.TraitsImplementing<INotifyAttack>().ToArray();
+			coords = self.TraitOrDefault<BodyOrientation>();
 			base.Created(self);
 		}
+		protected override Func<IEnumerable<Armament>> InitializeGetArmaments(Actor self) =>
+			() => stations.Where(s => s.Occupant != null).SelectMany(s => s.Arms);
 
-		protected override Func<IEnumerable<Armament>> InitializeGetArmaments(Actor self)
+		void Enter(Actor actor)
 		{
-			return () => armaments;
+			if (notifyAttacks == null || actor == null || actor.IsDead || stations.Any(p => p.Occupant == actor))
+				return;
+			var station = stations.FirstOrDefault(p => p.Occupant == null);
+			if (station == null)
+				return;
+			station.Occupant = actor;
+			station.Arms = actor.TraitsImplementing<Armament>().Where(a => Info.Armaments.Contains(a.Info.Name)).ToArray();
+			station.AutoTarget = actor.TraitOrDefault<AutoTarget>();
+			station.Facing = actor.TraitOrDefault<IFacing>();
+			station.Position = actor.TraitOrDefault<IPositionable>();
+			station.Render = actor.TraitOrDefault<RenderSprites>();
+			foreach (var arm in station.Arms)
+				arm.AddNotifyAttacks(host, notifyAttacks);
+			if (activeActivity != null)
+			{
+				station.RequestedTarget = activeActivity.CurrentTarget;
+				station.RequestedForce = activeActivity.ForceAttack;
+			}
 		}
 
-		void INotifyPassengerEntered.OnPassengerEntered(Actor self, Actor passenger)
+		void Exit(FirePortStation station)
 		{
-			paxFacing.Add(passenger, passenger.Trait<IFacing>());
-			paxPos.Add(passenger, passenger.Trait<IPositionable>());
-			paxRender.Add(passenger, passenger.Trait<RenderSprites>());
-
-			foreach (var a in passenger.TraitsImplementing<Armament>())
-			{
-				if (Info.Armaments.Contains(a.Info.Name))
+			foreach (var arm in station.Arms)
+				arm.RemoveNotifyAttacks(notifyAttacks);
+			station.Occupant = null;
+			station.Arms = [];
+			station.AutoTarget = null;
+			station.Facing = null;
+			station.Position = null;
+			station.Render = null;
+			station.Muzzles.Clear();
+			Clear(station);
+		}
+		void Exit(Actor actor)
+		{
+			foreach (var station in stations)
+				if (station.Occupant == actor)
+					Exit(station);
+		}
+		static void Clear(FirePortStation station)
+		{
+			station.RequestedTarget = station.OpportunityTarget = Target.Invalid;
+			station.RequestedForce = station.OpportunityForce = station.Persistent = station.Retaliating = false;
+			station.ScanTicks = 0;
+		}
+		void Reconcile()
+		{
+			var occupants = host.TraitsImplementing<Cargo>().SelectMany(c => c.Passengers)
+				.Concat(host.TraitsImplementing<IFirePortOccupantProvider>().SelectMany(p => p.Occupants)).Where(a => !a.IsDead).Distinct().ToArray();
+			var changed = false;
+			foreach (var station in stations)
+				if (station.Occupant != null && !occupants.Contains(station.Occupant))
 				{
-					a.AddNotifyAttacks(self, notifyAttacks);
-					armaments.Add(a);
+					Exit(station);
+					changed = true;
 				}
-			}
+			// Reconcile entry/load and exits. Existing bindings never move. Overflow gets
+			// a station only when a free port appears, not by modulo sharing.
+			if (changed || stations.Any(s => s.Occupant == null))
+				foreach (var actor in occupants.OrderBy(a => a.ActorID))
+					Enter(actor);
 		}
+		void INotifyPassengerEntered.OnPassengerEntered(Actor self, Actor actor) => Enter(actor);
+		void INotifyPassengerExited.OnPassengerExited(Actor self, Actor actor) => Exit(actor);
+		void INotifyFirePortOccupantEntered.OnFirePortOccupantEntered(Actor self, Actor actor) => Enter(actor);
+		void INotifyFirePortOccupantExited.OnFirePortOccupantExited(Actor self, Actor actor) => Exit(actor);
 
-		void INotifyPassengerExited.OnPassengerExited(Actor self, Actor passenger)
+		WVec Offset(FirePortStation station)
 		{
-			paxFacing.Remove(passenger);
-			paxPos.Remove(passenger);
-			paxRender.Remove(passenger);
-
-			foreach (var a in armaments.ToList())
-			{
-				if (a.Actor == passenger)
-				{
-					a.RemoveNotifyAttacks(notifyAttacks);
-					armaments.Remove(a);
-				}
-			}
+			var orientation = coords?.QuantizeOrientation(host.Orientation) ?? host.Orientation;
+			var offset = Info.PortOffsets[station.PortIndex].Rotate(orientation);
+			return coords?.LocalToWorld(offset) ?? offset;
 		}
-
-		FirePort SelectFirePort(Actor self, WAngle targetYaw)
+		bool InCone(FirePortStation station, in Target target)
 		{
-			// Pick a random port that faces the target
-			var bodyYaw = facing != null ? facing.Facing : WAngle.Zero;
-			var indices = Enumerable.Range(0, Info.Ports.Length).Shuffle(self.World.SharedRandom);
-			foreach (var i in indices)
-			{
-				var yaw = bodyYaw + Info.Ports[i].Yaw;
-				var leftTurn = (yaw - targetYaw).Angle;
-				var rightTurn = (targetYaw - yaw).Angle;
-				if (Math.Min(leftTurn, rightTurn) <= Info.Ports[i].Cone.Angle)
-					return Info.Ports[i];
-			}
-
+			if (Info.PortCones == null)
+				return true;
+			var yaw = (target.CenterPosition - (host.CenterPosition + Offset(station))).Yaw;
+			var portYaw = (facing?.Facing ?? host.Orientation.Yaw) + (Info.PortYaws?[station.PortIndex] ?? WAngle.Zero);
+			var delta = Math.Min((yaw - portYaw).Angle, (portYaw - yaw).Angle);
+			return delta <= Info.PortCones[station.PortIndex].Angle;
+		}
+		bool Valid(in Target target) => (target.Type != TargetType.Actor || target.Actor.CanBeViewedByPlayer(host.Owner))
+			&& (target.Type != TargetType.FrozenActor || Info.TargetFrozenActors) && target.IsValidFor(host);
+		internal Target RefreshTarget(Target target)
+		{
+			// Frozen targets are remembered snapshots. Do not replace them with a
+			// hidden live actor (the generic bot Recalculate helper does so).
+			if (target.Type != TargetType.FrozenActor)
+				target = target.Recalculate(host.Owner, out _);
+			return Valid(target) ? target : Target.Invalid;
+		}
+		IEnumerable<Armament> Eligible(FirePortStation station, Target target, bool force, bool checkRange, bool checkCone = true, bool includePaused = false)
+		{
+			if (!host.IsInWorld || host.IsDead || host.WillDispose || station.Occupant == null || station.Occupant.IsDead
+				|| !Valid(target) || checkCone && !InCone(station, target))
+				yield break;
+			if (!force && (target.RequiresForceFire || target.Type == TargetType.Terrain && !Info.TargetTerrainWithoutForceFire))
+				yield break;
+			var owner = target.Type == TargetType.Actor ? target.Actor.Owner : target.FrozenActor?.Owner;
+			var position = host.CenterPosition + Offset(station);
+			foreach (var arm in station.Arms)
+				if (!arm.IsTraitDisabled && (includePaused || !arm.IsTraitPaused) && arm.Weapon.IsValidAgainst(target, host.World, host)
+					&& (owner == null || (force ? arm.Info.ForceTargetRelationships : arm.Info.TargetRelationships).HasRelationship(host.Owner.RelationshipWith(owner)))
+					&& (!checkRange || target.IsInRange(position, arm.MaxRange())
+						&& (arm.Weapon.MinRange == WDist.Zero || !target.IsInRange(position, arm.Weapon.MinRange))))
+					yield return arm;
+		}
+		public bool CanFireFromPort(int port, in Target target) => !IsTraitDisabled && !IsTraitPaused
+			&& port >= 0 && port < stations.Length && Eligible(stations[port], target, false, true).Any();
+		public bool CanFireFromAnyPort(in Target target)
+		{
+			for (var i = 0; i < stations.Length; i++)
+				if (CanFireFromPort(i, target))
+					return true;
+			return false;
+		}
+		internal bool CanFireFromAnyPort(Target target, bool force) => !IsTraitDisabled && !IsTraitPaused
+			&& stations.Any(s => Eligible(s, target, force, true).Any());
+		internal IEnumerable<Armament> MovementArmaments(Target target, bool force) =>
+			stations.SelectMany(s => Eligible(s, target, force, false, false));
+		internal bool WaitingForResupply(Target target, bool force) => !Info.AbortOnResupply
+			&& stations.Any(s => Eligible(s, target, force, false, false, true).Any(a => a.IsTraitPaused));
+		internal WDist MovementMaximumRange(Target target, bool force) => stations.SelectMany(s =>
+			Eligible(s, target, force, false, false).Select(a => new WDist(Math.Max(0, a.MaxRange().Length - Offset(s).Length))))
+			.DefaultIfEmpty(WDist.Zero).Max();
+		internal WAngle? TurnTowardPort(Target target, bool force)
+		{
+			foreach (var station in stations)
+				if (Eligible(station, target, force, true, false).Any() && !InCone(station, target))
+					return (target.CenterPosition - (host.CenterPosition + Offset(station))).Yaw
+						- (Info.PortYaws?[station.PortIndex] ?? WAngle.Zero);
 			return null;
 		}
-
-		WVec PortOffset(Actor self, FirePort p)
+		public IEnumerable<Armament> ArmamentsAgainst(in Target target)
 		{
-			var bodyOrientation = coords.Value.QuantizeOrientation(self.Orientation);
-			return coords.Value.LocalToWorld(p.Offset.Rotate(bodyOrientation));
+			var t = target;
+			return IsTraitDisabled || IsTraitPaused ? [] : stations.SelectMany(s => Eligible(s, t, false, true));
 		}
-
-		public override void DoAttack(Actor self, in Target target)
+		Target Scan(FirePortStation station)
 		{
-			if (!CanAttack(self, target))
-				return;
+			var hostTarget = host.TraitOrDefault<AutoTarget>();
+			if (!host.IsInWorld || host.IsDead || host.WillDispose || IsTraitDisabled || IsTraitPaused
+				|| hostTarget?.IsTraitDisabled == true || hostTarget?.Stance < UnitStance.Defend)
+				return Target.Invalid;
+			return station.AutoTarget?.ScanForTarget(host, station.Arms,
+				t => Eligible(station, t, false, true).Any(), Info.TargetFrozenActors, new WDist(Offset(station).Length)) ?? Target.Invalid;
+		}
+		bool MayRetainOpportunity(FirePortStation station, Target target)
+		{
+			if (station.Persistent)
+				return true;
+			var hostTarget = host.TraitOrDefault<AutoTarget>();
+			if (!Info.OpportunityFire || station.AutoTarget == null || station.AutoTarget.IsTraitDisabled
+				|| hostTarget?.IsTraitDisabled == true || hostTarget?.Stance < UnitStance.ReturnFire
+				|| station.AutoTarget.Stance < UnitStance.ReturnFire)
+				return false;
+			if (station.Retaliating)
+				return true;
+			if (hostTarget?.Stance < UnitStance.Defend || !Valid(target))
+				return false;
+			return target.Type == TargetType.Actor
+				? station.AutoTarget.HasValidTargetPriority(host, target.Actor.Owner, target.Actor.GetEnabledTargetTypes())
+				: target.Type == TargetType.FrozenActor && station.AutoTarget.HasValidTargetPriority(host, target.FrozenActor.Owner, target.FrozenActor.TargetTypes);
+		}
+		public IReadOnlyList<Target> ForecastTargets() => stations.Select(s => s.Occupant == null ? Target.Invalid : Scan(s)).ToArray();
+		public override IEnumerable<Armament> ChooseArmamentsForTarget(Target target, bool forceAttack) =>
+			stations.SelectMany(s => Eligible(s, target, forceAttack, false));
+		public override bool HasAnyValidWeapons(in Target target, bool checkForCenterTargetingWeapons = false, bool reloadingIsInvalid = false) =>
+			ChooseArmamentsForTarget(target, false).Any(a => (!checkForCenterTargetingWeapons || a.Weapon.TargetActorCenter)
+				&& (!reloadingIsInvalid || !a.IsReloading));
+		public override WDist GetMaximumRangeVersusTarget(in Target target) =>
+			ChooseArmamentsForTarget(target, true).Select(a => a.MaxRange()).DefaultIfEmpty(WDist.Zero).Max();
+		public override WDist GetMinimumRangeVersusTarget(in Target target) =>
+			ChooseArmamentsForTarget(target, true).Select(a => a.Weapon.MinRange).DefaultIfEmpty(WDist.Zero).Min();
 
-			var pos = self.CenterPosition;
-			var targetedPosition = GetTargetPosition(pos, target);
-			var targetYaw = (targetedPosition - pos).Yaw;
-
-			foreach (var a in Armaments)
-			{
-				if (a.IsTraitDisabled)
-					continue;
-
-				var port = SelectFirePort(self, targetYaw);
-				if (port == null)
-					return;
-
-				paxFacing[a.Actor].Facing = targetYaw;
-				paxPos[a.Actor].SetCenterPosition(a.Actor, pos + PortOffset(self, port));
-
-				if (!a.CheckFire(a.Actor, facing, target))
-					continue;
-
-				if (a.Info.MuzzleSequence != null)
+		internal void Request(PassengerFirePortAttackActivity activity, Target target, bool force)
+		{
+			activeActivity = activity;
+			foreach (var station in stations)
+				if (station.Occupant != null)
 				{
-					// Muzzle facing is fixed once the firing starts
-					var muzzleAnim = new Animation(self.World, paxRender[a.Actor].GetImage(a.Actor), () => targetYaw);
-					var sequence = a.Info.MuzzleSequence;
-					var muzzleFlash = new AnimationWithOffset(muzzleAnim,
-						() => PortOffset(self, port),
-						() => false,
-						p => RenderUtils.ZOffsetFromCenter(self, p, 1024));
-
-					muzzles.Add(muzzleFlash);
-					muzzleAnim.PlayThen(sequence, () => muzzles.Remove(muzzleFlash));
+					station.RequestedTarget = target;
+					station.RequestedForce = force;
 				}
+		}
+		internal void Release(PassengerFirePortAttackActivity activity)
+		{
+			if (activeActivity != activity)
+				return;
+			activeActivity = null;
+			foreach (var station in stations)
+			{
+				if (Info.PersistentTargeting && Valid(station.RequestedTarget))
+				{
+					station.OpportunityTarget = station.RequestedTarget;
+					station.OpportunityForce = station.RequestedForce;
+					station.Persistent = true;
+					station.Retaliating = false;
+				}
+				station.RequestedTarget = Target.Invalid;
+				station.RequestedForce = false;
 			}
 		}
-
-		IEnumerable<IRenderable> IRender.Render(Actor self, WorldRenderer wr)
+		public override Activity GetAttackActivity(Actor self, AttackSource source, in Target target, bool allowMove, bool forceAttack, Color? targetLineColor = null) =>
+			new PassengerFirePortAttackActivity(self, this, target, allowMove, forceAttack, targetLineColor);
+		public override void DoAttack(Actor self, in Target target) { /* Stations fire during their own synchronized tick. */ }
+		public override void OnStopOrder(Actor self)
 		{
-			var pal = wr.Palette(Info.MuzzlePalette);
-
-			// Display muzzle flashes
-			foreach (var m in muzzles)
-				foreach (var r in m.Render(self, pal))
-					yield return r;
+			activeActivity = null;
+			foreach (var station in stations)
+				Clear(station);
+			base.OnStopOrder(self);
 		}
-
-		IEnumerable<Rectangle> IRender.ScreenBounds(Actor self, WorldRenderer wr)
+		void INotifyOwnerChanged.OnOwnerChanged(Actor self, Player oldOwner, Player newOwner)
 		{
-			// Muzzle flashes don't contribute to actor bounds
-			yield break;
+			activeActivity = null;
+			foreach (var station in stations)
+				Clear(station);
+			Reconcile();
+		}
+		void INotifyActorDisposing.Disposing(Actor self)
+		{
+			foreach (var station in stations)
+				if (station.Occupant != null)
+					Exit(station);
+		}
+		void INotifyStanceChanged.StanceChanged(Actor self, AutoTarget autoTarget, UnitStance oldStance, UnitStance newStance)
+		{
+			if (newStance >= oldStance)
+				return;
+			foreach (var station in stations)
+				if (!station.OpportunityForce)
+				{
+					station.OpportunityTarget = Target.Invalid;
+					station.Persistent = false;
+				}
+		}
+		void INotifyDamage.Damaged(Actor self, AttackInfo info)
+		{
+			var auto = self.TraitOrDefault<AutoTarget>();
+			if (IsTraitDisabled || IsTraitPaused || !Info.OpportunityFire || info.Damage.Value < 0
+				|| auto == null || auto.IsTraitDisabled || auto.Stance < UnitStance.ReturnFire
+				|| info.Attacker == null || info.Attacker.AppearsFriendlyTo(self))
+				return;
+			var target = Target.FromActor(info.Attacker);
+			foreach (var station in stations)
+				if (station.RequestedTarget.Type == TargetType.Invalid && station.AutoTarget != null
+					&& !station.AutoTarget.IsTraitDisabled && station.AutoTarget.Stance >= UnitStance.ReturnFire
+					&& Eligible(station, target, false, true).Any())
+				{
+					var preferred = Scan(station);
+					station.OpportunityTarget = preferred.Type != TargetType.Invalid ? preferred : target;
+					station.OpportunityForce = station.Persistent = false;
+					station.Retaliating = preferred.Type == TargetType.Invalid;
+				}
 		}
 
 		protected override void Tick(Actor self)
 		{
+			Reconcile();
+			IsAiming = false;
+			foreach (var station in stations)
+			{
+				foreach (var muzzle in station.Muzzles.ToArray())
+					muzzle.Animation.Tick();
+				if (!self.IsInWorld || self.IsDead || self.WillDispose || IsTraitDisabled || IsTraitPaused)
+				{
+					Clear(station);
+					continue;
+				}
+				if (station.Occupant == null)
+					continue;
+				var requested = RefreshTarget(station.RequestedTarget);
+				station.RequestedTarget = Valid(requested) ? requested : Target.Invalid;
+				var hasRequest = station.RequestedTarget.Type != TargetType.Invalid;
+				var target = station.RequestedTarget;
+				var force = station.RequestedForce;
+				if (!hasRequest)
+				{
+					target = RefreshTarget(station.OpportunityTarget);
+					force = station.OpportunityForce;
+					if (!MayRetainOpportunity(station, target) || !Eligible(station, target, force, true).Any())
+					{
+						target = Target.Invalid;
+						if (--station.ScanTicks <= 0 && Info.OpportunityFire)
+						{
+							station.ScanTicks = Info.ScanInterval;
+							target = Scan(station);
+						}
+						force = station.OpportunityForce = station.Persistent = station.Retaliating = false;
+					}
+					station.OpportunityTarget = target;
+				}
+				var arms = Eligible(station, target, force, true).ToArray();
+				if (arms.Length == 0)
+					continue;
+				IsAiming = true;
+				var position = self.CenterPosition + Offset(station);
+				var yaw = (target.CenterPosition - position).Yaw;
+				if (station.Facing != null)
+					station.Facing.Facing = yaw;
+				station.Position?.SetCenterPosition(station.Occupant, position);
+				foreach (var arm in arms)
+					if (arm.CheckFire(station.Occupant, station.Facing, target) && arm.Info.MuzzleSequence != null && station.Render != null)
+					{
+						var animation = new Animation(self.World, station.Render.GetImage(station.Occupant), () => yaw);
+						var muzzle = new AnimationWithOffset(animation, () => Offset(station), () => false,
+							p => RenderUtils.ZOffsetFromCenter(self, p, 1024));
+						station.Muzzles.Add(muzzle);
+						animation.PlayThen(arm.Info.MuzzleSequence, () => station.Muzzles.Remove(muzzle));
+					}
+			}
 			base.Tick(self);
+		}
+		IEnumerable<IRenderable> IRender.Render(Actor self, WorldRenderer renderer) =>
+			stations.SelectMany(s => s.Muzzles).SelectMany(m => m.Render(self, renderer.Palette(Info.MuzzlePalette)));
+		IEnumerable<Rectangle> IRender.ScreenBounds(Actor self, WorldRenderer renderer) { yield break; }
+	}
 
-			// Take a copy so that Tick() can remove animations
-			foreach (var m in muzzles.ToArray())
-				m.Animation.Tick();
+	/// <summary>Broadcasts an explicit order to stations; opportunity targets remain station-local.</summary>
+	public sealed class PassengerFirePortAttackActivity : Activity
+	{
+		readonly AttackGarrisoned attack;
+		readonly IMove move;
+		readonly Color? lineColor;
+		readonly Player owner;
+		public Target CurrentTarget { get; private set; }
+		public bool ForceAttack { get; }
+		public PassengerFirePortAttackActivity(Actor self, AttackGarrisoned attack, Target target, bool allowMove, bool force, Color? color)
+		{
+			this.attack = attack;
+			owner = self.Owner;
+			move = allowMove ? self.TraitOrDefault<IMove>() : null;
+			CurrentTarget = target;
+			ForceAttack = force;
+			lineColor = color;
+			ActivityType = ActivityType.Attack;
+			ChildHasPriority = false;
+		}
+		public override bool Tick(Actor self)
+		{
+			if (IsCanceling || attack.IsTraitDisabled || self.Owner != owner)
+				return true;
+			if (attack.IsTraitPaused)
+				return false;
+			CurrentTarget = attack.RefreshTarget(CurrentTarget);
+			if (CurrentTarget.Type == TargetType.Invalid)
+				return true;
+			attack.Request(this, CurrentTarget, ForceAttack);
+			if (!TickChild(self))
+				return false;
+			if (attack.CanFireFromAnyPort(CurrentTarget, ForceAttack))
+				return false;
+			var arms = attack.MovementArmaments(CurrentTarget, ForceAttack).ToArray();
+			var max = attack.MovementMaximumRange(CurrentTarget, ForceAttack);
+			if (arms.Length == 0 && attack.WaitingForResupply(CurrentTarget, ForceAttack))
+				return false;
+			if (move == null || max == WDist.Zero)
+				return true;
+			var yaw = attack.TurnTowardPort(CurrentTarget, ForceAttack);
+			if (yaw != null)
+				QueueChild(new OpenRA.Mods.Common.Activities.Turn(self, yaw.Value));
+			else
+				QueueChild(move.MoveWithinRange(CurrentTarget, arms.Select(a => a.Weapon.MinRange).Min(), max));
+			return false;
+		}
+		protected override void OnLastRun(Actor self) => attack.Release(this);
+		public override IEnumerable<TargetLineNode> TargetLineNodes(Actor self)
+		{
+			if (lineColor != null)
+				yield return new TargetLineNode(CurrentTarget, lineColor.Value);
 		}
 	}
 }

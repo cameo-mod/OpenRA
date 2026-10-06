@@ -8,6 +8,7 @@
 		<ProjectReference Include="..\OpenRA.Mods.Common\OpenRA.Mods.Common.csproj">
 			<Private>True</Private>
 		</ProjectReference>
+		<ProjectReference Include="..\OpenRA.Mods.AS\OpenRA.Mods.AS.csproj" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
 		<PackageReference Include="NUnit" Version="4.3.2" />
 		<PackageReference Include="NUnit.Console" Version="3.19.0" />
