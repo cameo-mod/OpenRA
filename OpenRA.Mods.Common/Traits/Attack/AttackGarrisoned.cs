@@ -68,6 +68,8 @@ namespace OpenRA.Mods.Common.Traits
 		public readonly int PortIndex;
 		public Actor Occupant { get; internal set; }
 		internal Armament[] Arms = [];
+		internal PassengerWeaponStation[] WeaponStations = [];
+		public IReadOnlyList<Target> WeaponTargets => WeaponStations.Select(s => s.Target).ToArray();
 		internal AutoTarget AutoTarget;
 		internal IFacing Facing;
 		internal IPositionable Position;
@@ -78,6 +80,14 @@ namespace OpenRA.Mods.Common.Traits
 		internal int ScanTicks;
 		internal readonly List<AnimationWithOffset> Muzzles = [];
 		public FirePortStation(int index) { PortIndex = index; }
+	}
+
+	internal sealed class PassengerWeaponStation
+	{
+		internal Armament[] Arms;
+		internal Turreted Turret;
+		internal Target Target = Target.Invalid;
+		internal int ScanTicks;
 	}
 
 	/// <summary>Uses AttackBase orders but never AttackFollow's shared opportunity target.</summary>
@@ -124,6 +134,8 @@ namespace OpenRA.Mods.Common.Traits
 						hash = hash * 31 + (int)port.OpportunityTarget.Type;
 						hash = hash * 31 + (int)(port.OpportunityTarget.FrozenActor?.ID ?? 0);
 						hash = hash * 31 + port.ScanTicks;
+						foreach (var weaponStation in port.WeaponStations)
+							hash = (hash * 31 + Sync.HashTarget(weaponStation.Target)) * 31 + weaponStation.ScanTicks;
 						hash = hash * 31 + (port.RequestedForce ? 1 : 0) + (port.OpportunityForce ? 2 : 0) + (port.Persistent ? 4 : 0) + (port.Retaliating ? 8 : 0);
 					}
 					return hash;
@@ -149,6 +161,8 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 			station.Occupant = actor;
 			station.Arms = actor.TraitsImplementing<Armament>().Where(a => Info.Armaments.Contains(a.Info.Name)).ToArray();
+			station.WeaponStations = station.Arms.GroupBy(a => a.Turret)
+				.Select(g => new PassengerWeaponStation { Turret = g.Key, Arms = g.ToArray() }).ToArray();
 			station.AutoTarget = actor.TraitOrDefault<AutoTarget>();
 			station.Facing = actor.TraitOrDefault<IFacing>();
 			station.Position = actor.TraitOrDefault<IPositionable>();
@@ -168,6 +182,7 @@ namespace OpenRA.Mods.Common.Traits
 				arm.RemoveNotifyAttacks(notifyAttacks);
 			station.Occupant = null;
 			station.Arms = [];
+			station.WeaponStations = [];
 			station.AutoTarget = null;
 			station.Facing = null;
 			station.Position = null;
@@ -186,6 +201,11 @@ namespace OpenRA.Mods.Common.Traits
 			station.RequestedTarget = station.OpportunityTarget = Target.Invalid;
 			station.RequestedForce = station.OpportunityForce = station.Persistent = station.Retaliating = false;
 			station.ScanTicks = 0;
+			foreach (var weaponStation in station.WeaponStations)
+			{
+				weaponStation.Target = Target.Invalid;
+				weaponStation.ScanTicks = 0;
+			}
 		}
 		void Reconcile()
 		{
@@ -288,7 +308,8 @@ namespace OpenRA.Mods.Common.Traits
 				|| hostTarget?.IsTraitDisabled == true || hostTarget?.Stance < UnitStance.Defend)
 				return Target.Invalid;
 			return station.AutoTarget?.ScanForTarget(host, station.Arms,
-				t => Eligible(station, t, false, true).Any(), Info.TargetFrozenActors, new WDist(Offset(station).Length)) ?? Target.Invalid;
+				t => Eligible(station, t, false, true).Any(), Info.TargetFrozenActors, new WDist(Offset(station).Length),
+				(a, t) => Eligible(station, t, false, true).Contains(a)) ?? Target.Invalid;
 		}
 		bool MayRetainOpportunity(FirePortStation station, Target target)
 		{
@@ -424,10 +445,12 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					target = RefreshTarget(station.OpportunityTarget);
 					force = station.OpportunityForce;
-					if (!MayRetainOpportunity(station, target) || !Eligible(station, target, force, true).Any())
+					var rescan = station.AutoTarget?.Info.DynamicWeaponPriority == true && !station.Persistent && !station.Retaliating
+						&& --station.ScanTicks <= 0;
+					if (rescan || !MayRetainOpportunity(station, target) || !Eligible(station, target, force, true).Any())
 					{
 						target = Target.Invalid;
-						if (--station.ScanTicks <= 0 && Info.OpportunityFire)
+						if ((rescan || --station.ScanTicks <= 0) && Info.OpportunityFire)
 						{
 							station.ScanTicks = Info.ScanInterval;
 							target = Scan(station);
@@ -435,6 +458,11 @@ namespace OpenRA.Mods.Common.Traits
 						force = station.OpportunityForce = station.Persistent = station.Retaliating = false;
 					}
 					station.OpportunityTarget = target;
+				}
+				if (station.WeaponStations.Any(g => g.Turret != null))
+				{
+					FireWeaponStations(station);
+					continue;
 				}
 				var arms = Eligible(station, target, force, true).ToArray();
 				if (arms.Length == 0)
@@ -446,17 +474,72 @@ namespace OpenRA.Mods.Common.Traits
 					station.Facing.Facing = yaw;
 				station.Position?.SetCenterPosition(station.Occupant, position);
 				foreach (var arm in arms)
-					if (arm.CheckFire(station.Occupant, station.Facing, target) && arm.Info.MuzzleSequence != null && station.Render != null)
-					{
-						var animation = new Animation(self.World, station.Render.GetImage(station.Occupant), () => yaw);
-						var muzzle = new AnimationWithOffset(animation, () => Offset(station), () => false,
-							p => RenderUtils.ZOffsetFromCenter(self, p, 1024));
-						station.Muzzles.Add(muzzle);
-						animation.PlayThen(arm.Info.MuzzleSequence, () => station.Muzzles.Remove(muzzle));
-					}
+					FireArm(station, arm, target, yaw);
 			}
 			base.Tick(self);
 		}
+		void FireArm(FirePortStation station, Armament arm, Target target, WAngle yaw)
+		{
+			if (!arm.CheckFire(station.Occupant, station.Facing, target) || arm.Info.MuzzleSequence == null || station.Render == null)
+				return;
+			var animation = new Animation(host.World, station.Render.GetImage(station.Occupant), () => yaw);
+			var muzzle = new AnimationWithOffset(animation, () => Offset(station), () => false,
+				p => RenderUtils.ZOffsetFromCenter(host, p, 1024));
+			station.Muzzles.Add(muzzle);
+			animation.PlayThen(arm.Info.MuzzleSequence, () => station.Muzzles.Remove(muzzle));
+		}
+		void FireWeaponStations(FirePortStation station)
+		{
+			var occupant = station.Occupant;
+			var position = host.CenterPosition + Offset(station);
+			station.Position?.SetCenterPosition(occupant, position);
+			foreach (var group in station.WeaponStations)
+			{
+				bool EligibleGroup(Target t, bool force) => Eligible(station, t, force, true).Any(group.Arms.Contains);
+				var target = station.RequestedTarget;
+				var force = station.RequestedForce;
+				if (!EligibleGroup(target, force))
+				{
+					force = station.Persistent && station.OpportunityForce;
+					if ((station.Persistent || station.Retaliating) && MayRetainOpportunity(station, station.OpportunityTarget)
+						&& EligibleGroup(station.OpportunityTarget, force))
+						target = station.OpportunityTarget;
+					else
+					{
+						force = false;
+						var hostAuto = host.TraitOrDefault<AutoTarget>();
+						var mayScan = Info.OpportunityFire && hostAuto?.IsTraitDisabled != true
+							&& !(hostAuto?.Stance < UnitStance.Defend) && station.AutoTarget != null
+							&& !station.AutoTarget.IsTraitDisabled && station.AutoTarget.Stance >= UnitStance.Defend;
+						if (!mayScan)
+							group.Target = Target.Invalid;
+						else if (--group.ScanTicks <= 0 || !EligibleGroup(group.Target, false))
+						{
+							group.ScanTicks = Info.ScanInterval;
+							group.Target = station.AutoTarget.ScanForTarget(host, group.Arms, t => EligibleGroup(t, false),
+									Info.TargetFrozenActors, new WDist(Offset(station).Length),
+									(a, t) => Eligible(station, t, false, true).Contains(a)) ;
+						}
+						target = group.Target;
+					}
+				}
+				group.Target = target;
+				var arms = Eligible(station, target, force, true).Where(group.Arms.Contains).ToArray();
+				if (arms.Length == 0)
+					continue;
+				IsAiming = true;
+				if (group.Turret != null)
+				{
+					if (!group.Turret.FaceTarget(occupant, target))
+						continue;
+				}
+				else if (station.Facing != null)
+					station.Facing.Facing = (target.CenterPosition - position).Yaw;
+				foreach (var arm in arms)
+					FireArm(station, arm, target, group.Turret?.WorldOrientation.Yaw ?? (target.CenterPosition - position).Yaw);
+			}
+		}
+
 		IEnumerable<IRenderable> IRender.Render(Actor self, WorldRenderer renderer) =>
 			stations.SelectMany(s => s.Muzzles).SelectMany(m => m.Render(self, renderer.Palette(Info.MuzzlePalette)));
 		IEnumerable<Rectangle> IRender.ScreenBounds(Actor self, WorldRenderer renderer) { yield break; }

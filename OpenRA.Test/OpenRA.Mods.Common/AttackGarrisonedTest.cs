@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
@@ -18,6 +19,7 @@ using System.Runtime.CompilerServices;
 using NUnit.Framework;
 using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Mods.Common.HitShapes;
 using OpenRA.Mods.Common.Warheads;
 using OpenRA.Primitives;
 using OpenRA.Support;
@@ -88,7 +90,7 @@ namespace OpenRA.Test
 			public readonly Actor Host, Rifle, Rocket, Infantry, Tank;
 			public readonly AttackGarrisoned Attack;
 			public readonly Recorder Recorder;
-			public Fixture(WVec[] offsets = null, WAngle[] cones = null, WAngle[] yaws = null, bool cargo = false, AttackGarrisonedInfo schema = null, int rifleMinRange = 0)
+			public Fixture(WVec[] offsets = null, WAngle[] cones = null, WAngle[] yaws = null, bool cargo = false, AttackGarrisonedInfo schema = null, int rifleMinRange = 0, bool dynamicPriority = false)
 			{
 				Log.AddChannel("debug", null);
 				Own = Player("own", "enemy"); Enemy = Player("enemy", "own");
@@ -99,7 +101,7 @@ namespace OpenRA.Test
 				ActorInfo Passenger(string name, string weapon, string prefer) => new(name,
 					new SpaceInfo(), body, new AttackFollowInfo(), Info<ArmamentInfo>(("Weapon", weapon), ("PauseOnCondition", new BooleanExpression("empty"))),
 					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
-					new AutoTargetInfo(), Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>(prefer)), ("Priority", 10)),
+					Info<AutoTargetInfo>(("DynamicWeaponPriority", dynamicPriority)), Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>(prefer)), ("Priority", 10)),
 					Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Priority", 1)));
 				var actors = new Dictionary<string, ActorInfo>
 				{
@@ -111,11 +113,30 @@ namespace OpenRA.Test
 					["infantry"] = new("infantry", new SpaceInfo(), Info<TargetableInfo>(("TargetTypes", new BitSet<TargetableType>("Infantry")))),
 					["tank"] = new("tank", new SpaceInfo(), Info<TargetableInfo>(("TargetTypes", new BitSet<TargetableType>("Vehicle")))),
 				};
+				actors["multi"] = new ActorInfo("multi", new SpaceInfo(), body,
+					Info<AttackMultiTurretedInfo>(("Turrets", ImmutableArray.Create("primary", "secondary"))),
+					Info<TurretedInfo>(("Turret", "primary")), Info<TurretedInfo>(("Turret", "secondary")),
+					Info<ArmamentInfo>(("Weapon", "rifle"), ("Name", "primary"), ("Turret", "primary")),
+					Info<ArmamentInfo>(("Weapon", "rocket"), ("Name", "secondary"), ("Turret", "secondary")),
+					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
+					new RecorderInfo(), Info<AutoTargetInfo>(("DynamicWeaponPriority", dynamicPriority)),
+					Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle"))));
 				var weapons = new Dictionary<string, OpenRA.GameRules.WeaponInfo>
 				{
 					["rifle"] = Info<OpenRA.GameRules.WeaponInfo>(("Range", new WDist(4096)), ("ReloadDelay", 3), ("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Warheads", ImmutableArray.Create<IWarhead>(Info<TargetDamageWarhead>(("Damage", 10))))),
 					["rocket"] = Info<OpenRA.GameRules.WeaponInfo>(("Range", new WDist(8192)), ("ReloadDelay", 3), ("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Warheads", ImmutableArray.Create<IWarhead>(Info<TargetDamageWarhead>(("Damage", 20))))),
 				};
+				if (dynamicPriority)
+				{
+					foreach (var weapon in weapons.Values) Set(weapon.Warheads[0], "ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle"));
+					foreach (var (name, armor) in new[] { ("infantry", "Infantry"), ("tank", "Heavy") })
+						actors[name] = new ActorInfo(name, new SpaceInfo(), body,
+							Info<TargetableInfo>(("TargetTypes", new BitSet<TargetableType>(name == "tank" ? "Vehicle" : "Infantry"))),
+							Info<HealthInfo>(("HP", 1000)), Info<ArmorInfo>(("Type", armor)),
+							Info<HitShapeInfo>(("Type", new CircleShape(new WDist(100)))));
+					Set(weapons["rifle"].Warheads[0], "Versus", new Dictionary<string, int> { ["Infantry"] = 80, ["Heavy"] = 120 }.ToFrozenDictionary());
+					Set(weapons["rocket"].Warheads[0], "Versus", new Dictionary<string, int> { ["Infantry"] = 120, ["Heavy"] = 80 }.ToFrozenDictionary());
+				}
 				Set(weapons["rifle"], "MinRange", new WDist(rifleMinRange));
 				var rules = new Ruleset(actors, weapons, null, null, null, null, null, null);
 				World = (World)RuntimeHelpers.GetUninitializedObject(typeof(World));
@@ -128,6 +149,7 @@ namespace OpenRA.Test
 				var index = DispatchProxy.Create<IActorMap, SpatialIndex>();
 				Set(World, "ActorMap", index);
 				Host = Create("host", Own, WPos.Zero);
+				if (dynamicPriority) { Set(Own, "PlayerActor", Host); Set(Enemy, "PlayerActor", Host); }
 				while (frameEnd.Count > 0) frameEnd.Dequeue()(World);
 				Rifle = Create("rifle", Own, WPos.Zero);
 				Rocket = Create("rocket", Own, WPos.Zero);
@@ -197,6 +219,102 @@ namespace OpenRA.Test
 			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2), "One host notification per actual fire");
 			Assert.That(f.World.SharedRandom.Last, Is.EqualTo(rng));
 			Assert.That(f.Host.Trait<AutoTarget>().ActiveAttackBases, Is.Empty);
+		}
+		[Test]
+		public void MultiTurretsAimAndFireAtDifferentTargetsInOneTick()
+		{
+			var f = new Fixture(dynamicPriority: true);
+			var multi = f.Create("multi", f.Own, WPos.Zero);
+			var attack = multi.Trait<AttackMultiTurreted>();
+			var rng = f.World.SharedRandom.Last;
+			((ITick)attack).Tick(multi);
+			Assert.That(attack.TurretTargets.Select(t => t.Actor), Is.EqualTo(new[] { f.Tank, f.Infantry }));
+			Assert.That(multi.Trait<Recorder>().Events.Count, Is.EqualTo(2));
+			Assert.That(f.World.SharedRandom.Last, Is.EqualTo(rng));
+		}
+		[TestCase(false)]
+		[TestCase(true)]
+		public void PassengerTurretsFireIndependentlyAndRespectStanceImmediately(bool cargo)
+		{
+			var f = new Fixture(dynamicPriority: true, cargo: cargo);
+			var multi = f.Create("multi", f.Own, WPos.Zero);
+			f.Enter(multi);
+			f.Tick();
+			Assert.That(f.Attack.Stations[0].WeaponTargets.Select(t => t.Actor), Is.EqualTo(new[] { f.Tank, f.Infantry }));
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2));
+			multi.Trait<AutoTarget>().SetStance(multi, UnitStance.HoldFire);
+			foreach (var arm in multi.TraitsImplementing<Armament>())
+				for (var i = 0; i < 5; i++) ((ITick)arm).Tick(multi);
+			f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2));
+			Assert.That(f.Attack.Stations[0].WeaponTargets.Select(t => t.Type), Is.All.EqualTo(TargetType.Invalid));
+			f.Exit(multi);
+			Assert.That(f.Attack.Stations[0].WeaponTargets, Is.Empty);
+		}
+		sealed class CustomArmorWarhead : TargetDamageWarhead
+		{
+			public override WeaponTargetScore TargetingVersus(Actor victim, HitShape shape) => new(25, 1);
+		}
+		[Test]
+		public void ScoringUsesCustomWarheadArmorPolicyInsteadOfAuthoredRows()
+		{
+			var f = new Fixture(dynamicPriority: true);
+			var arm = f.Rifle.Trait<Armament>();
+			var warhead = Info<CustomArmorWarhead>(("Damage", 10), ("ValidTargets", new BitSet<TargetableType>("Vehicle")));
+			Set(arm.Weapon, "Warheads", ImmutableArray.Create<IWarhead>(warhead));
+			Assert.That(WeaponTargetScore.Against(arm, f.Rifle, f.Tank).CompareTo(new WeaponTargetScore(25, 1)), Is.Zero);
+		}
+		[Test]
+		public void DynamicPassengerRescansWhenBetterVisibleTargetArrives()
+		{
+			var f = new Fixture(dynamicPriority: true);
+			f.Tank.Trait<Space>().Visible = false;
+			f.Enter(f.Rifle);
+			f.Tick();
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Actor, Is.SameAs(f.Infantry));
+			f.Tank.Trait<Space>().Visible = true;
+			for (var i = 0; i < 6; i++) f.Tick();
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Actor, Is.SameAs(f.Tank));
+		}
+		[TestCase(AttackSource.AutoTarget, true)]
+		[TestCase(AttackSource.AttackMove, true)]
+		[TestCase(AttackSource.Default, false)]
+		public void AutomaticApproachYieldsToReadyTargetButExplicitOrderDoesNot(AttackSource source, bool retarget)
+		{
+			var f = new Fixture(dynamicPriority: true);
+			f.Tank.Trait<Space>().SetCenterPosition(f.Tank, new WPos(6000, 0, 0));
+			var attack = f.Rifle.Trait<AttackFollow>();
+			var activity = new AttackFollow.AttackActivity(f.Rifle, source, Target.FromActor(f.Tank), false, false);
+			activity.Tick(f.Rifle);
+			Assert.That(attack.RequestedTarget.Actor, Is.SameAs(retarget ? f.Infantry : f.Tank));
+		}
+		[Test]
+		public void ReadySniperEngagementWinsBeforeStrongerOutOfRangeDemolitionTarget()
+		{
+			var f = new Fixture(dynamicPriority: true);
+			var multi = f.Create("multi", f.Own, WPos.Zero);
+			var cannon = multi.TraitsImplementing<Armament>().First();
+			Set(cannon.Weapon, "Range", new WDist(1024));
+			var chosen = multi.Trait<AutoTarget>().ScanForTarget(multi, true, true, true);
+			Assert.That(chosen.Actor, Is.SameAs(f.Infantry));
+		}
+		[Test]
+		public void DynamicVersusOverridesClassWeightsAndDistanceForRealPassengers()
+		{
+			var f = new Fixture(dynamicPriority: true); f.Enter(f.Rifle); f.Enter(f.Rocket);
+			Assert.That(f.Rifle.Trait<AutoTarget>().Info.DynamicWeaponPriority, Is.True);
+			Assert.That(WeaponTargetScore.Against(f.Rifle.Trait<Armament>(), f.Rifle, f.Tank).CompareTo(new WeaponTargetScore(120, 1)), Is.Zero);
+			f.Tick();
+			Assert.That(f.Attack.Stations.Select(s => s.OpportunityTarget.Actor), Is.EqualTo(new[] { f.Tank, f.Infantry }));
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2));
+		}
+		[Test]
+		public void DynamicVersusNeverSelectsHiddenBetterTarget()
+		{
+			var f = new Fixture(dynamicPriority: true); f.Enter(f.Rifle);
+			f.Tank.Trait<Space>().Visible = false;
+			f.Tick();
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Actor, Is.SameAs(f.Infantry));
 		}
 		[Test]
 		public void SelectedArmamentsAndEachPortRangeFilterBeforePriority()
