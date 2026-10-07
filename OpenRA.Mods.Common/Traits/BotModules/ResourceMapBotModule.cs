@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Linq;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
@@ -71,6 +72,7 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 		IResourceLayer resourceLayer;
 		public readonly ResourceMapBotModuleInfo Info;
 
@@ -88,6 +90,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x12); // deterministic per-module stream (lobby seed + client index + module salt)
 			indiceSideLength = info.ResourceMapStrideRadius << 1;
 			Info = info;
 
@@ -101,7 +104,7 @@ namespace OpenRA.Mods.Common.Traits
 			if (firstTick)
 			{
 				resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
-				updateResourceMapInterval = world.LocalRandom.Next(Info.UpdateResourceMapInverval, Info.UpdateResourceMapInverval << 1);
+				updateResourceMapInterval = random.Next(Info.UpdateResourceMapInverval, Info.UpdateResourceMapInverval << 1);
 
 				if (resourceMapIndices == null && resourceLayer != null)
 				{

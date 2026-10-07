@@ -13,6 +13,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
@@ -134,6 +135,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 		readonly ActorIndex.OwnerAndNamesAndTrait<TransformsInfo> mcvs;
 		readonly ActorIndex.OwnerAndNamesAndTrait<TransformsInfo> constructionMcvs;
 		readonly ActorIndex.OwnerAndNamesAndTrait<BuildingInfo> constructionYards;
@@ -181,6 +183,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x10); // deterministic per-module stream (lobby seed + client index + module salt)
 			constructionMcvTypes = info.ConstructionMcvTypes.Count > 0 ? info.ConstructionMcvTypes : info.McvTypes;
 			mcvs = new ActorIndex.OwnerAndNamesAndTrait<TransformsInfo>(world, info.McvTypes, player);
 			constructionMcvs = new ActorIndex.OwnerAndNamesAndTrait<TransformsInfo>(world, constructionMcvTypes, player);
@@ -204,10 +207,10 @@ namespace OpenRA.Mods.Common.Traits
 		protected override void TraitEnabled(Actor self)
 		{
 			// Avoid all AIs reevaluating assignments on the same tick, randomize their initial evaluation delay.
-			scanInterval = world.LocalRandom.Next(Info.ScanForNewMcvInterval, Info.ScanForNewMcvInterval << 1);
-			buildMCVInterval = world.LocalRandom.Next(Info.BuildMcvInterval, Info.BuildMcvInterval << 1);
+			scanInterval = random.Next(Info.ScanForNewMcvInterval, Info.ScanForNewMcvInterval << 1);
+			buildMCVInterval = random.Next(Info.BuildMcvInterval, Info.BuildMcvInterval << 1);
 			moveConyardInterval = Info.MoveConyardTick > 0
-				? world.LocalRandom.Next(Info.MoveConyardTick, Info.MoveConyardTick << 1)
+				? random.Next(Info.MoveConyardTick, Info.MoveConyardTick << 1)
 				: -1;
 		}
 
@@ -480,7 +483,7 @@ namespace OpenRA.Mods.Common.Traits
 						attraction += ((indiceSideLengthSquare >> 1) - Math.Abs(resourceCellsCount - (indiceSideLengthSquare >> 1))) >> 2;
 						attraction += 8 * resourceCreatorLocs.Length;
 
-						var resCenter = resourceCreatorLocs.Length == 0 || world.LocalRandom.Next(2) > 0 ? resourceCellsCenter : resourceCreatorLocs.Random(world.LocalRandom);
+						var resCenter = resourceCreatorLocs.Length == 0 || random.Next(2) > 0 ? resourceCellsCenter : resourceCreatorLocs.Random(random);
 
 						attraction -= CalculateThreats(indiceSideLengthSquare, i);
 
@@ -705,7 +708,7 @@ namespace OpenRA.Mods.Common.Traits
 			if (producibleMcvTypes.Length == 0)
 				return;
 
-			var mcvType = producibleMcvTypes.Random(world.LocalRandom);
+			var mcvType = producibleMcvTypes.Random(random);
 
 			// Make sure we only request one MCV at a time.
 			if (unitBuilder.RequestedProductionCount(bot, mcvType) <= 0)
@@ -729,7 +732,7 @@ namespace OpenRA.Mods.Common.Traits
 			var conyards = constructionYards.Actors
 				.Where(a => !a.IsDead);
 
-			var moveOldConyardFirst = Info.MoveOldConyardFirst ?? world.LocalRandom.Next(2) > 0;
+			var moveOldConyardFirst = Info.MoveOldConyardFirst ?? random.Next(2) > 0;
 
 			if (moveOldConyardFirst)
 				conyards = conyards.OrderBy(a => a.ActorID);
@@ -895,7 +898,7 @@ namespace OpenRA.Mods.Common.Traits
 			// When we don't have a construction yard, we notify the new location to other traits for defence,
 			// If not, we only notify sometimes, because we are not sure if mcv can successfully deploy at the desired location.
 			// TODO: This could be addressed via INotifyTransform.
-			if (constructionYards.Actors.All(a => a.IsDead) || world.LocalRandom.Next(2) > 0)
+			if (constructionYards.Actors.All(a => a.IsDead) || random.Next(2) > 0)
 			{
 				foreach (var n in notifyPositionsUpdated)
 				{
@@ -956,7 +959,7 @@ namespace OpenRA.Mods.Common.Traits
 					cells = cells.OrderBy(c => deta * (c - target).LengthSquared + theta * (c - source).LengthSquared);
 				}
 				else
-					cells = cells.Shuffle(world.LocalRandom);
+					cells = cells.Shuffle(random);
 
 				CPos? bestcell = null;
 				foreach (var cell in cells)

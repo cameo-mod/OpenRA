@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.AS.Traits
@@ -42,6 +43,7 @@ namespace OpenRA.Mods.AS.Traits
 	{
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 		readonly Dictionary<SupportPowerInstance, int> waitingPowers = [];
 		readonly Dictionary<string, SupportPowerDecisionAS> powerDecisions = [];
 		readonly List<SupportPowerInstance> stalePowers = [];
@@ -53,6 +55,7 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x17); // deterministic per-module stream (lobby seed + client index + module salt)
 			self.World.AddFrameEndTask(w => playerResource = player.PlayerActor.Trait<PlayerResources>());
 		}
 
@@ -89,7 +92,7 @@ namespace OpenRA.Mods.AS.Traits
 					if (sp.Info.Cost != 0 && playerResource.Cash + playerResource.Resources < sp.Info.Cost)
 					{
 						AIUtils.BotDebug("AI: {1} can't afford the activation of support power {0}. Delaying rescan.", sp.Info.OrderName, player.PlayerName);
-						waitingPowers[sp] += powerDecision.GetNextScanTime(world);
+						waitingPowers[sp] += powerDecision.GetNextScanTime(random);
 
 						continue;
 					}
@@ -98,7 +101,7 @@ namespace OpenRA.Mods.AS.Traits
 					if (attackLocation == null)
 					{
 						AIUtils.BotDebug("AI: {1} can't find suitable attack location for support power {0}. Delaying rescan.", sp.Info.OrderName, player.PlayerName);
-						waitingPowers[sp] += powerDecision.GetNextScanTime(world);
+						waitingPowers[sp] += powerDecision.GetNextScanTime(random);
 
 						continue;
 					}

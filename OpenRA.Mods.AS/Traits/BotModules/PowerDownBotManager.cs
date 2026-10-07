@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.AS.Traits
@@ -32,6 +33,7 @@ namespace OpenRA.Mods.AS.Traits
 	{
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 
 		PowerManager playerPower;
 		int toggleTick;
@@ -58,6 +60,7 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x16); // deterministic per-module stream (lobby seed + client index + module salt)
 
 			isToggledBuildingsValid = a => a != null && a.Owner == self.Owner && !a.IsDead && a.IsInWorld;
 		}
@@ -69,7 +72,7 @@ namespace OpenRA.Mods.AS.Traits
 
 		protected override void TraitEnabled(Actor self)
 		{
-			toggleTick = world.LocalRandom.Next(Info.Interval);
+			toggleTick = random.Next(Info.Interval);
 		}
 
 		static int GetTogglePowerChanging(Actor a)
