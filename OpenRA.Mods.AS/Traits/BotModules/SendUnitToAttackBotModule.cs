@@ -18,6 +18,7 @@ using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Activities;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.AS.Traits
@@ -80,6 +81,7 @@ namespace OpenRA.Mods.AS.Traits
 
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 
 		readonly Predicate<Actor> unitCannotBeOrdered;
 		readonly Predicate<Actor> unitCannotBeOrderedOrIsBusy;
@@ -105,6 +107,7 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x13); // deterministic per-module stream (lobby seed + client index + module salt)
 			isInvalidActor = a => a == null || a.IsDead || !a.IsInWorld;
 			unitCannotBeOrdered = a => isInvalidActor(a) || a.Owner != player;
 			unitCannotBeOrderedOrIsBusy = a => unitCannotBeOrdered(a) || !(a.IsIdle || a.CurrentActivity is FlyIdle);
@@ -116,7 +119,7 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			// Avoid all AIs reevaluating assignments on the same tick, randomize their initial evaluation delay.
 			// and we divide preparing stage, disguising stage and attacking stage for PERF.
-			prepareAttackTicks = world.LocalRandom.Next(0, Info.ScanTick);
+			prepareAttackTicks = random.Next(0, Info.ScanTick);
 			disguiseDelayTicks = prepareAttackTicks + Info.ScanTick / 3;
 			assignAttackTicks = disguiseDelayTicks + Info.ScanTick / 3;
 		}
@@ -175,7 +178,7 @@ namespace OpenRA.Mods.AS.Traits
 			var targetPlayers = world.Players.Where(p => p.WinState != WinState.Lost && Info.ValidRelationships.HasRelationship(p.RelationshipWith(player))).ToList();
 			if (targetPlayers.Count == 0)
 				return;
-			targetPlayer = targetPlayers.Random(world.LocalRandom);
+			targetPlayer = targetPlayers.Random(random);
 
 			attackActors = world.ActorsHavingTrait<IPositionable>().Where(a =>
 			{
@@ -311,7 +314,7 @@ namespace OpenRA.Mods.AS.Traits
 				return !hasModifier;
 			});
 
-			var targetDistance = Info.TargetDistances.Random(world.LocalRandom);
+			var targetDistance = Info.TargetDistances.Random(random);
 			switch (targetDistance)
 			{
 				case TargetDistance.Closest:
@@ -321,7 +324,7 @@ namespace OpenRA.Mods.AS.Traits
 					targets = targets.OrderByDescending(a => (a.CenterPosition - attackActors[0].CenterPosition).HorizontalLengthSquared);
 					break;
 				case TargetDistance.Random:
-					targets = targets.Shuffle(world.LocalRandom);
+					targets = targets.Shuffle(random);
 					break;
 			}
 

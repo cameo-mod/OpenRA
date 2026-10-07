@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.AS.Traits
@@ -29,6 +30,7 @@ namespace OpenRA.Mods.AS.Traits
 		readonly Dictionary<Actor, IssueOrderToBotInfo> issueOrderToBotEntries = [];
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 
 		public bool ManagerRunning { get; private set; }
 
@@ -37,6 +39,7 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x14); // deterministic per-module stream (lobby seed + client index + module salt)
 			ManagerRunning = false;
 		}
 
@@ -78,7 +81,7 @@ namespace OpenRA.Mods.AS.Traits
 
 		public Order PhraseEntryFromIssueOrderToBot(Actor issuer, IssueOrderToBotInfo info)
 		{
-			if (issuer.IsDead || !issuer.IsInWorld || issuer.Owner != player || world.LocalRandom.Next(100) > info.OrderChance)
+			if (issuer.IsDead || !issuer.IsInWorld || issuer.Owner != player || random.Next(100) > info.OrderChance)
 				return null;
 
 			var subject = info.IsIssuerOwner ? issuer.Owner.PlayerActor : issuer;
@@ -100,7 +103,7 @@ namespace OpenRA.Mods.AS.Traits
 						validActor = validActors.OrderByDescending(a => (a.Location - issuer.Location).LengthSquared).FirstOrDefault();
 						break;
 					case TargetDistance.Random:
-						validActor = validActors.RandomOrDefault(world.LocalRandom);
+						validActor = validActors.RandomOrDefault(random);
 						break;
 				}
 
@@ -130,7 +133,7 @@ namespace OpenRA.Mods.AS.Traits
 				if (entry.Key.IsDead || !entry.Key.IsInWorld || entry.Key.Owner != player)
 					continue;
 
-				if (world.LocalRandom.Next(100) > entry.Value.Chance)
+				if (random.Next(100) > entry.Value.Chance)
 					continue;
 
 				bot.QueueOrder(entry.Value.Order);

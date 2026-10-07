@@ -11,6 +11,7 @@
 using System.Collections.Generic;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.AS.Traits
@@ -101,7 +102,7 @@ namespace OpenRA.Mods.AS.Traits
 			return answer;
 		}
 
-		public int GetNextScanTime(World world) { return world.LocalRandom.Next(MinimumScanTimeInterval, MaximumScanTimeInterval); }
+		public int GetNextScanTime(MersenneTwister random) { return random.Next(MinimumScanTimeInterval, MaximumScanTimeInterval); }
 
 		/// <summary>Makes up part of a decision, describing how to evaluate a target.</summary>
 		public class Consideration

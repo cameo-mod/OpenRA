@@ -16,6 +16,7 @@ using OpenRA.Activities;
 using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Activities;
 using OpenRA.Mods.Common.Traits;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.AS.Traits
@@ -67,6 +68,7 @@ namespace OpenRA.Mods.AS.Traits
 	{
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 		readonly Predicate<Actor> unitCannotBeOrdered;
 		readonly Predicate<Actor> unitCannotBeOrderedOrIsBusy;
 		readonly Predicate<Actor> unitCannotBeOrderedOrIsIdle;
@@ -81,6 +83,7 @@ namespace OpenRA.Mods.AS.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x15); // deterministic per-module stream (lobby seed + client index + module salt)
 			switch (info.ValidTransportOwner)
 			{
 				case TransportOwner.Self:
@@ -102,7 +105,7 @@ namespace OpenRA.Mods.AS.Traits
 		protected override void TraitEnabled(Actor self)
 		{
 			// Avoid all AIs reevaluating assignments on the same tick, randomize their initial evaluation delay.
-			minAssignRoleDelayTicks = world.LocalRandom.Next(0, Info.ScanTick);
+			minAssignRoleDelayTicks = random.Next(0, Info.ScanTick);
 		}
 
 		void IBotTick.BotTick(IBot bot)
@@ -140,7 +143,7 @@ namespace OpenRA.Mods.AS.Traits
 				if (tcs.Count == 0)
 					return;
 
-				var tc = tcs.Random(world.LocalRandom);
+				var tc = tcs.Random(random);
 				var cargo = tc.Trait;
 				var transport = tc.Actor;
 				var spaceTaken = 0;

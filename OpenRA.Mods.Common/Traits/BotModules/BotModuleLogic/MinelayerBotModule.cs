@@ -14,6 +14,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Primitives;
+using OpenRA.Support;
 using OpenRA.Traits;
 
 namespace OpenRA.Mods.Common.Traits
@@ -68,6 +69,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		readonly World world;
 		readonly Player player;
+		readonly MersenneTwister random;
 		readonly Predicate<Actor> unitCannotBeOrdered;
 		readonly Predicate<Actor> unitCannotBeOrderedOrIsBusy;
 		readonly CPos?[] conflictPositionQueue;
@@ -86,6 +88,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			world = self.World;
 			player = self.Owner;
+			random = BotRandom.Create(world, player, 0x11); // deterministic per-module stream (lobby seed + client index + module salt)
 			unitCannotBeOrdered = a => a == null || a.IsDead || !a.IsInWorld || a.Owner != player;
 			unitCannotBeOrderedOrIsBusy = a => unitCannotBeOrdered(a) || !a.IsIdle;
 			conflictPositionQueue = new CPos?[MaxPositionCacheLength];
@@ -95,7 +98,7 @@ namespace OpenRA.Mods.Common.Traits
 		protected override void TraitEnabled(Actor self)
 		{
 			// Avoid all AIs reevaluating assignments on the same tick, randomize their initial evaluation delay.
-			minAssignRoleDelayTicks = world.LocalRandom.Next(0, Info.ScanTick);
+			minAssignRoleDelayTicks = random.Next(0, Info.ScanTick);
 			alertedTicks = 0;
 			conflictPositionLength = 0;
 			favoritePositionsLength = 0;
@@ -145,7 +148,7 @@ namespace OpenRA.Mods.Common.Traits
 						if (enemies.Length == 0)
 							return;
 
-						var enemy = enemies.Random(world.LocalRandom);
+						var enemy = enemies.Random(random);
 
 						foreach (var minelayer in minelayers)
 						{
