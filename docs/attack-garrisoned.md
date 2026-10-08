@@ -12,8 +12,9 @@ existing bindings do not shift after another occupant exits. Overflow occupants
 cannot fire and acquire a free station on reconciliation. `NoFireOverflow` records
 an intentional capacity/port mismatch for the mod audit; it does not enable sharing.
 Removed, dead or disposing hosts cannot fire (including carriers that are themselves
-inside another transport). Selected armaments, targets, force/persistence/retaliation flags and fixed scan
-cadence are station-local. Assignment and attack state participate in sync.
+inside another transport). Selected armaments, targets, force/persistence/retaliation flags and scan
+cadence are station-local. The initial scan phase is deterministically staggered by port index; assignment
+and attack state participate in sync.
 
 The occupant's AutoTarget supplies priorities, but the station supplies selected
 weapons and an eligibility predicate. Candidate selection checks the actual port
