@@ -46,9 +46,12 @@ namespace OpenRA.Mods.Common.Traits
 		Mobile mobile;
 		AutoTarget autoTarget;
 		bool requestedForceAttack;
+		protected bool RequestedForceAttack => requestedForceAttack;
 		Activity requestedTargetPresetForActivity;
 		bool opportunityForceAttack;
+		protected bool OpportunityForceAttack => opportunityForceAttack;
 		bool opportunityTargetIsPersistentTarget;
+		int dynamicScanTicks;
 
 		public void SetRequestedTarget(in Target target, bool isForceAttack = false, Activity requestedTargetPreset = null)
 		{
@@ -102,6 +105,11 @@ namespace OpenRA.Mods.Common.Traits
 			return false;
 		}
 
+		protected virtual void FinishAttackTick(Actor self) => base.Tick(self);
+
+		protected virtual Target ScanOpportunityTarget(Actor self, AutoTarget scanner) => scanner.Info.DynamicWeaponPriority
+			? scanner.ScanForInRangeTarget(self, this) : scanner.ScanForTarget(self, false, false);
+
 		protected override void Tick(Actor self)
 		{
 			if (IsTraitDisabled)
@@ -141,10 +149,12 @@ namespace OpenRA.Mods.Common.Traits
 				if (OpportunityTarget.IsValidFor(self))
 					IsAiming = CanAimAtTarget(self, OpportunityTarget, opportunityForceAttack);
 
-				if (!IsAiming && Info.OpportunityFire && autoTarget != null &&
+				if ((!IsAiming || autoTarget?.Info.DynamicWeaponPriority == true && !opportunityTargetIsPersistentTarget && --dynamicScanTicks <= 0)
+					&& Info.OpportunityFire && autoTarget != null &&
 					!autoTarget.IsTraitDisabled && autoTarget.Stance >= UnitStance.Defend)
 				{
-					OpportunityTarget = autoTarget.ScanForTarget(self, false, false);
+					dynamicScanTicks = 5;
+					OpportunityTarget = ScanOpportunityTarget(self, autoTarget);
 					opportunityForceAttack = false;
 					opportunityTargetIsPersistentTarget = false;
 
@@ -156,7 +166,7 @@ namespace OpenRA.Mods.Common.Traits
 					DoAttack(self, OpportunityTarget);
 			}
 
-			base.Tick(self);
+			FinishAttackTick(self);
 		}
 
 		public override Activity GetAttackActivity(
@@ -248,6 +258,7 @@ namespace OpenRA.Mods.Common.Traits
 			BitSet<TargetableType> lastVisibleTargetTypes;
 			Player lastVisibleOwner;
 			bool hasTicked;
+			int dynamicScanTicks;
 			bool returnToBase = false;
 
 			public AttackActivity(Actor self, AttackSource source, in Target target, bool allowMove, bool forceAttack, Color? targetLineColor = null)
@@ -290,6 +301,25 @@ namespace OpenRA.Mods.Common.Traits
 
 			public override bool Tick(Actor self)
 			{
+				// Automatic demolition pursuit must yield to a reachable ranged engagement.
+				// Explicit player orders and force-fire keep their requested target.
+				var auto = self.TraitOrDefault<AutoTarget>();
+				if (!IsCanceling && !forceAttack && source != AttackSource.Default && auto?.Info.DynamicWeaponPriority == true
+					&& --dynamicScanTicks <= 0)
+				{
+					dynamicScanTicks = 5;
+					foreach (var attack in attacks)
+					{
+						var preferred = auto.ScanForInRangeTarget(self, attack);
+						if (preferred.Type == TargetType.Invalid || preferred == target)
+							continue;
+						ChildActivity?.Cancel(self);
+						target = preferred;
+						foreach (var a in attacks)
+							a.SetRequestedTarget(target, false);
+						break;
+					}
+				}
 				if (!IsCanceling && !HasArmamentsFor(target))
 					Cancel(self, true);
 

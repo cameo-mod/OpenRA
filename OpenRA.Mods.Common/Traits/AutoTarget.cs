@@ -39,6 +39,9 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("It will try to hunt down the enemy if it is set to AttackAnything.")]
 		public readonly bool AllowMovement = true;
 
+		[Desc("Rank visible weapon targets by Versus, then distance and ActorID, ignoring class priority weights.")]
+		public readonly bool DynamicWeaponPriority = false;
+
 		[Desc("It will try to pivot to face the enemy if stance is not HoldFire.")]
 		public readonly bool AllowTurning = true;
 
@@ -338,7 +341,7 @@ namespace OpenRA.Mods.Common.Traits
 		/// <summary>Read-only station scan using this occupant's priorities and selected arms.
 		/// The station owns its synchronized cadence; this does not touch nextScanTime or RNG.</summary>
 		public Target ScanForTarget(Actor origin, IReadOnlyList<Armament> stationArmaments,
-			Func<Target, bool> canFire, bool targetFrozenActors = false, WDist extraRange = default)
+			Func<Target, bool> canFire, bool targetFrozenActors = false, WDist extraRange = default, Func<Armament, Target, bool> armFilter = null)
 		{
 			if (IsTraitDisabled || Stance < UnitStance.Defend || stationArmaments.Count == 0)
 				return Target.Invalid;
@@ -353,7 +356,17 @@ namespace OpenRA.Mods.Common.Traits
 					range = armament.MaxRange();
 			}
 			return stances == PlayerRelationship.None ? Target.Invalid
-				: ChooseTarget(origin, null, stances, range + extraRange, false, false, stationArmaments, canFire, targetFrozenActors);
+				: ChooseTarget(origin, null, stances, range + extraRange, false, false, stationArmaments, canFire, targetFrozenActors, armFilter);
+		}
+
+		/// <summary>Visible, currently reachable weapon targets, without overrides or RNG.</summary>
+		public Target ScanForInRangeTarget(Actor self, AttackBase attack)
+		{
+			if (IsTraitDisabled || Stance < UnitStance.Defend || attack.IsTraitDisabled || attack.IsTraitPaused)
+				return Target.Invalid;
+			var stances = attack.UnforcedAttackTargetStances();
+			return stances == PlayerRelationship.None ? Target.Invalid : ChooseTarget(self, attack, stances,
+				Info.ScanRadius > 0 ? WDist.FromCells(Info.ScanRadius) : attack.GetMaximumRange(), false, true);
 		}
 
 		public void ScanAndAttack(Actor self, bool allowMove, bool allowTurn)
@@ -389,11 +402,15 @@ namespace OpenRA.Mods.Common.Traits
 		}
 
 		Target ChooseTarget(Actor self, AttackBase ab, PlayerRelationship attackStances, WDist scanRange, bool allowMove, bool allowTurn,
-			IReadOnlyList<Armament> stationArmaments = null, Func<Target, bool> canFire = null, bool targetFrozenActors = false)
+			IReadOnlyList<Armament> stationArmaments = null, Func<Target, bool> canFire = null, bool targetFrozenActors = false, Func<Armament, Target, bool> armFilter = null)
 		{
 			var chosenTarget = Target.Invalid;
 			var chosenTargetPriority = int.MinValue;
 			var chosenTargetRange = 0;
+			var chosenWeaponScore = WeaponTargetScore.Neutral;
+			var chosenDistanceSquared = long.MaxValue;
+			var chosenActorId = uint.MaxValue;
+			var chosenInRange = false;
 
 			var activePriorities = activeTargetPriorities.ToList();
 			if (activePriorities.Count == 0 || self.Owner == null)
@@ -402,7 +419,7 @@ namespace OpenRA.Mods.Common.Traits
 			var targetsInRange = self.World.FindActorsInCircle(self.CenterPosition, scanRange)
 				.Select(Target.FromActor);
 
-			if (allowMove || targetFrozenActors || ab?.Info.TargetFrozenActors == true)
+			if (!Info.DynamicWeaponPriority && (allowMove || targetFrozenActors || ab?.Info.TargetFrozenActors == true))
 				targetsInRange = targetsInRange
 					.Concat(self.Owner.FrozenActorLayer.FrozenActorsInCircle(self.World, self.CenterPosition, scanRange)
 					.Select(Target.FromFrozenActor));
@@ -434,6 +451,9 @@ namespace OpenRA.Mods.Common.Traits
 				}
 				else if (target.Type == TargetType.FrozenActor)
 				{
+					// Dynamic effectiveness reads only currently visible armor, never frozen live backing state.
+					if (Info.DynamicWeaponPriority)
+						continue;
 					if (attackStances == PlayerRelationship.Enemy && self.Owner.RelationshipWith(target.FrozenActor.Owner) == PlayerRelationship.Ally)
 						continue;
 
@@ -453,7 +473,7 @@ namespace OpenRA.Mods.Common.Traits
 				foreach (var ati in activePriorities)
 				{
 					// Already have a higher priority target
-					if (ati.Priority < chosenTargetPriority)
+					if (!Info.DynamicWeaponPriority && ati.Priority < chosenTargetPriority)
 						continue;
 
 					// Incompatible relationship
@@ -489,6 +509,48 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (canFire != null ? !canFire(target) : !allowTurn && !ab.TargetInFiringArc(self, target, ab.Info.FacingTolerance))
 					continue;
+
+				if (Info.DynamicWeaponPriority)
+				{
+					var bestScore = new WeaponTargetScore(0, 1);
+					var found = false;
+					var inRange = false;
+					foreach (var arm in armaments)
+					{
+						if (arm.IsTraitDisabled || arm.IsTraitPaused || armFilter != null && !armFilter(arm, target) ||
+							!arm.Info.TargetRelationships.HasRelationship(self.Owner.RelationshipWith(owner)) ||
+							!arm.Weapon.IsValidAgainst(target, self.World, arm.Actor))
+							continue;
+						var readyRange = target.IsInRange(self.CenterPosition, arm.MaxRange()) &&
+							(arm.Weapon.MinRange == WDist.Zero || !target.IsInRange(self.CenterPosition, arm.Weapon.MinRange));
+						if (!allowMove && stationArmaments == null && !readyRange)
+							continue;
+						// Shoot a currently reachable ranged target before approaching a demolition target.
+						if (inRange && !readyRange)
+							continue;
+						var score = WeaponTargetScore.Against(arm, arm.Actor, target.Actor);
+						if (!found || readyRange && !inRange || score.CompareTo(bestScore) > 0)
+							bestScore = score;
+						found = true;
+						inRange |= readyRange;
+					}
+					if (!found)
+						continue;
+					var delta = target.CenterPosition - self.CenterPosition;
+					var distanceSquared = (long)delta.X * delta.X + (long)delta.Y * delta.Y + (long)delta.Z * delta.Z;
+					var id = target.Actor.ActorID;
+					if (chosenTarget.Type == TargetType.Invalid || inRange && !chosenInRange ||
+						inRange == chosenInRange && WeaponTargetScore.Prefer(bestScore, distanceSquared, id,
+							chosenWeaponScore, chosenDistanceSquared, chosenActorId))
+					{
+						chosenTarget = target;
+						chosenWeaponScore = bestScore;
+						chosenDistanceSquared = distanceSquared;
+						chosenActorId = id;
+						chosenInRange = inRange;
+					}
+					continue;
+				}
 
 				// Evaluate whether we want to target this actor
 				var targetRange = (target.CenterPosition - self.CenterPosition).Length;

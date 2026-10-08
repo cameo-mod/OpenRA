@@ -74,6 +74,14 @@ namespace OpenRA.Mods.Common.Warheads
 				DoImpact(target.CenterPosition, firedBy, args);
 		}
 
+		/// <summary>Armor effectiveness for automatic targeting; custom armor policies override this.
+		/// No damage, impact modifiers or hidden actor state is applied by this read-only query.</summary>
+		public virtual WeaponTargetScore TargetingVersus(Actor victim, HitShape shape) =>
+			WeaponTargetScore.ArmorMultiplier(victim.TraitsImplementing<Armor>()
+				.Where(a => !a.IsTraitDisabled && a.Info.Type != null && Versus.ContainsKey(a.Info.Type) &&
+					(shape.Info.ArmorTypes.IsEmpty || shape.Info.ArmorTypes.Contains(a.Info.Type)))
+				.Select(a => Versus[a.Info.Type]));
+
 		protected virtual int DamageVersus(Actor victim, HitShape shape, WarheadArgs args)
 		{
 			// If no Versus values are defined, DamageVersus would return 100 anyway, so we might as well do that early.
