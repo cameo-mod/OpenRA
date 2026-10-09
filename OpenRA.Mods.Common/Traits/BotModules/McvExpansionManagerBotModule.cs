@@ -88,6 +88,10 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("When moving to a resource, what distance (in cells) to resource should we attempt to maintain?")]
 		public readonly int CRmodeTryMaintainRange = 8;
 
+		[Desc("Skip unreachable placeable deployment cells instead of abandoning the search.",
+			"Opt-in; false preserves the legacy search and produces no rejection diagnostics.")]
+		public readonly bool SkipUnreachableDeployCells = false;
+
 		[Desc("Distance (in cells) to avoid a friendly conyard when choosing an expansion location.",
 					"Recommended to set it equal or larger than ResourceMapStrideRadius.")]
 		public readonly int CRmodeFriendlyConyardDislikeRange = 14;
@@ -960,6 +964,18 @@ namespace OpenRA.Mods.Common.Traits
 				}
 				else
 					cells = cells.Shuffle(random);
+
+				if (Info.SkipUnreachableDeployCells)
+				{
+					var result = McvDeployCellSearch.Find(cells, source, target, tryMaintainRange,
+						cell => world.CanPlaceBuilding(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv),
+						cell => mobile == null || pathfinder.PathMightExistForLocomotorBlockedByImmovable(mobile.Locomotor, source, cell),
+						out var tally);
+					if (!result.HasValue)
+						Log.Write("debug", $"AI ({player.ClientIndex}): MCV deploy search failed actor={mcv.ActorID} tick={world.WorldTick} source={source} target={target} scanned={tally.Scanned} placeable={tally.Placeable} Placement={tally.PlacementRejected} Unreachable={tally.Unreachable} None=0");
+
+					return result;
+				}
 
 				CPos? bestcell = null;
 				foreach (var cell in cells)
