@@ -26,6 +26,7 @@ namespace OpenRA.Mods.Common.Traits
 	/// <summary>Opt-in search; the module's legacy search remains unchanged when disabled.</summary>
 	public static class McvDeployCellSearch
 	{
+		/// <summary>Find a reachable placeable candidate without aborting on another cell's rejection.</summary>
 		public static CPos? Find(IEnumerable<CPos> weightedCells, CPos source, CPos target,
 			int tryMaintainRange, Func<CPos, bool> canPlace, Func<CPos, bool> canReach,
 			out McvDeployCellTally tally)

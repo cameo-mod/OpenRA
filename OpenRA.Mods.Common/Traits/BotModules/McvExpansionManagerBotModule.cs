@@ -88,9 +88,10 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("When moving to a resource, what distance (in cells) to resource should we attempt to maintain?")]
 		public readonly int CRmodeTryMaintainRange = 8;
 
-		[Desc("Skip unreachable placeable deployment cells instead of abandoning the search.",
-			"Opt-in; false preserves the legacy search and produces no rejection diagnostics.")]
-		public readonly bool SkipUnreachableDeployCells = false;
+		[ConsumedConditionReference]
+		[Desc("Condition enabling search past unreachable deployment cells.",
+			"Null or false preserves the legacy search and produces no rejection diagnostics.")]
+		public readonly BooleanExpression SkipUnreachableDeployCellsCondition = null;
 
 		[Desc("Distance (in cells) to avoid a friendly conyard when choosing an expansion location.",
 					"Recommended to set it equal or larger than ResourceMapStrideRadius.")]
@@ -146,6 +147,9 @@ namespace OpenRA.Mods.Common.Traits
 		readonly ActorIndex.OwnerAndNamesAndTrait<BuildingInfo> mcvFactories;
 		readonly FrozenSet<string> constructionMcvTypes;
 
+		/// <summary>Derived from the optional deployment-search condition; never enabled by default.</summary>
+		public bool SkipUnreachableDeployCells { get; private set; }
+
 		IBotPositionsUpdated[] notifyPositionsUpdated;
 		IBotRequestUnitProduction[] requestUnitProduction;
 		IBotSuggestRefineryProduction[] suggestRefineryProduction;
@@ -193,6 +197,20 @@ namespace OpenRA.Mods.Common.Traits
 			constructionMcvs = new ActorIndex.OwnerAndNamesAndTrait<TransformsInfo>(world, constructionMcvTypes, player);
 			constructionYards = new ActorIndex.OwnerAndNamesAndTrait<BuildingInfo>(world, info.ConstructionYardTypes, player);
 			mcvFactories = new ActorIndex.OwnerAndNamesAndTrait<BuildingInfo>(world, info.McvFactoryTypes, player);
+		}
+
+		public override IEnumerable<VariableObserver> GetVariableObservers()
+		{
+			foreach (var observer in base.GetVariableObservers())
+				yield return observer;
+
+			if (Info.SkipUnreachableDeployCellsCondition != null)
+				yield return new VariableObserver(DeploySearchConditionsChanged, Info.SkipUnreachableDeployCellsCondition.Variables);
+		}
+
+		void DeploySearchConditionsChanged(Actor self, IReadOnlyDictionary<string, int> conditions)
+		{
+			SkipUnreachableDeployCells = Info.SkipUnreachableDeployCellsCondition.Evaluate(conditions);
 		}
 
 		protected override void Created(Actor self)
@@ -965,7 +983,7 @@ namespace OpenRA.Mods.Common.Traits
 				else
 					cells = cells.Shuffle(random);
 
-				if (Info.SkipUnreachableDeployCells)
+				if (SkipUnreachableDeployCells)
 				{
 					var result = McvDeployCellSearch.Find(cells, source, target, tryMaintainRange,
 						cell => world.CanPlaceBuilding(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv),

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using NUnit.Framework;
 using OpenRA.Mods.Common.Traits;
 
@@ -10,7 +12,25 @@ namespace OpenRA.Test
 		[Test]
 		public void LegacySearchRemainsDefault()
 		{
-			Assert.That(new McvExpansionManagerBotModuleInfo().SkipUnreachableDeployCells, Is.False);
+			Assert.That(new McvExpansionManagerBotModuleInfo().SkipUnreachableDeployCellsCondition, Is.Null);
+		}
+
+		[Test]
+		public void ObserverTracksGenericConditionAndRevocation()
+		{
+			var info = FieldLoader.Load<McvExpansionManagerBotModuleInfo>(new MiniYaml("",
+				MiniYaml.FromString("SkipUnreachableDeployCellsCondition: genericbot\n", "test")));
+			var module = (McvExpansionManagerBotModule)RuntimeHelpers.GetUninitializedObject(typeof(McvExpansionManagerBotModule));
+			typeof(ConditionalTrait<McvExpansionManagerBotModuleInfo>).GetField("Info").SetValue(module, info);
+			var observer = module.GetVariableObservers().Single();
+			Assert.That(observer.Variables, Is.EquivalentTo(new[] { "genericbot" }));
+			Assert.That(module.SkipUnreachableDeployCells, Is.False);
+			observer.Notifier(null, new Dictionary<string, int> { ["classicbot"] = 1 });
+			Assert.That(module.SkipUnreachableDeployCells, Is.False);
+			observer.Notifier(null, new Dictionary<string, int> { ["genericbot"] = 1 });
+			Assert.That(module.SkipUnreachableDeployCells, Is.True);
+			observer.Notifier(null, new Dictionary<string, int>());
+			Assert.That(module.SkipUnreachableDeployCells, Is.False);
 		}
 
 		[Test]
