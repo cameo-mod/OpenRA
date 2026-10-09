@@ -30,7 +30,7 @@ namespace OpenRA.Graphics
 		// The GPU sampler limit caps each draw at SpriteRenderer.SheetCount sheets,
 		// but a layer may reference more distinct sheets across the whole map.
 		// Cells are partitioned into batches that each fit within the limit.
-		sealed class Batch : IDisposable
+		internal sealed class Batch : IDisposable
 		{
 			public readonly Sheet[] Sheets = new Sheet[SpriteRenderer.SheetCount];
 			public int SheetCount;
@@ -39,10 +39,10 @@ namespace OpenRA.Graphics
 			public readonly HashSet<int> DirtyRows = [];
 			public readonly bool[] IgnoreTint;
 
-			public Batch(int vertexCount, bool lighting)
+			public Batch(int vertexCount, bool lighting, Func<int, IVertexBuffer<Vertex>> createVertexBuffer)
 			{
 				Vertices = new Vertex[vertexCount];
-				VertexBuffer = Game.Renderer.Context.CreateEmptyVertexBuffer<Vertex>(vertexCount);
+				VertexBuffer = createVertexBuffer(vertexCount);
 				if (lighting)
 					IgnoreTint = new bool[vertexCount];
 			}
@@ -120,7 +120,8 @@ namespace OpenRA.Graphics
 			indexRowStride = 6 * map.MapSize.Width;
 			batchForCell = new int[map.MapSize.Width * map.MapSize.Height];
 			Array.Fill(batchForCell, -1);
-			batches.Add(new Batch(vertexRowStride * map.MapSize.Height, wr.TerrainLighting != null));
+			batches.Add(new Batch(vertexRowStride * map.MapSize.Height, wr.TerrainLighting != null,
+				vertexCount => Game.Renderer.Context.CreateEmptyVertexBuffer<Vertex>(vertexCount)));
 
 			lock (IndexBuffersLock)
 			{
@@ -249,7 +250,8 @@ namespace OpenRA.Graphics
 			if (candidate != null)
 				return candidate;
 
-			candidate = new Batch(vertexRowStride * map.MapSize.Height, worldRenderer.TerrainLighting != null);
+			candidate = new Batch(vertexRowStride * map.MapSize.Height, worldRenderer.TerrainLighting != null,
+				vertexCount => Game.Renderer.Context.CreateEmptyVertexBuffer<Vertex>(vertexCount));
 			batches.Add(candidate);
 			return candidate;
 		}
