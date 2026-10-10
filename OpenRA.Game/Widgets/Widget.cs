@@ -560,8 +560,10 @@ namespace OpenRA.Widgets
 
 		public virtual void RemoveChildren()
 		{
-			foreach (var child in Children)
-				child?.Removed();
+			// Removed() callbacks may detach siblings, so iterate a snapshot
+			foreach (var child in Children.ToArray())
+				if (Children.Contains(child))
+					child?.Removed();
 
 			Children.Clear();
 		}
@@ -573,9 +575,11 @@ namespace OpenRA.Widgets
 			ForceYieldKeyboardFocus();
 			ForceYieldMouseFocus();
 
-			// PERF: Avoid LINQ.
-			for (var i = Children.Count - 1; i >= 0; --i)
-				Children[i].Hidden();
+			// Hidden() callbacks may detach siblings, so iterate a snapshot
+			var children = Children.ToArray();
+			for (var i = children.Length - 1; i >= 0; --i)
+				if (Children.Contains(children[i]))
+					children[i]?.Hidden();
 		}
 
 		public virtual void Removed()
@@ -585,9 +589,11 @@ namespace OpenRA.Widgets
 			ForceYieldKeyboardFocus();
 			ForceYieldMouseFocus();
 
-			// PERF: Avoid LINQ.
-			for (var i = Children.Count - 1; i >= 0; --i)
-				Children[i].Removed();
+			// Removed() callbacks may detach siblings, so iterate a snapshot
+			var children = Children.ToArray();
+			for (var i = children.Length - 1; i >= 0; --i)
+				if (Children.Contains(children[i]))
+					children[i]?.Removed();
 
 			if (LogicObjects != null)
 			{
