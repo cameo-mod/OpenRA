@@ -37,7 +37,7 @@ namespace OpenRA.Mods.Common.HitShapes
 		public readonly int VerticalBottomOffset = 0;
 
 		int2 ab;
-		int abLenSq;
+		long abLenSq;
 
 		public CapsuleShape() { }
 
@@ -48,10 +48,15 @@ namespace OpenRA.Mods.Common.HitShapes
 			Radius = radius;
 		}
 
+		static long LengthSquaredLong(int2 v)
+		{
+			return (long)v.X * v.X + (long)v.Y * v.Y;
+		}
+
 		public void Initialize()
 		{
 			ab = PointB - PointA;
-			abLenSq = ab.LengthSquared / 1024;
+			abLenSq = LengthSquaredLong(ab) / 1024;
 
 			if (abLenSq == 0)
 				throw new YamlException("This Capsule describes a circle. Use a Circle HitShape instead.");
@@ -62,24 +67,37 @@ namespace OpenRA.Mods.Common.HitShapes
 			OuterRadius = Radius + new WDist(Math.Max(PointA.Length, PointB.Length));
 		}
 
+		// All squared distances and dot products are computed in long:
+		// int2.LengthSquared/int2.Dot wrap silently past ~46340 units and a
+		// wrapped-negative operand crashes Exts.ISqrt (InvalidOperationException)
+		// — the same defect class that killed a 4v4 campaign game in
+		// PolygonShape.DistanceFromEdge. Long math preserves every result inside
+		// the previously valid int domain bit-for-bit.
 		public WDist DistanceFromEdge(in WVec v)
 		{
 			var p = new int2(v.X, v.Y);
 
-			var t = int2.Dot(p - PointA, ab) / abLenSq;
+			var t = ((long)(p.X - PointA.X) * ab.X + (long)(p.Y - PointA.Y) * ab.Y) / abLenSq;
 
 			if (t < 0)
-				return new WDist(Math.Max(0, (PointA - p).Length - Radius.Length));
+				return EndpointDistance(PointA, p);
 			if (t > 1024)
-				return new WDist(Math.Max(0, (PointB - p).Length - Radius.Length));
+				return EndpointDistance(PointB, p);
 
-			var projection = PointA + new int2(
-				ab.X * t / 1024,
-				ab.Y * t / 1024);
+			var apX = ab.X * t / 1024;
+			var apY = ab.Y * t / 1024;
+			var dx = apX - ((long)p.X - PointA.X);
+			var dy = apY - ((long)p.Y - PointA.Y);
 
-			var distance = (projection - p).Length;
+			var distance = Exts.ISqrt(dx * dx + dy * dy);
 
-			return new WDist(Math.Max(0, distance - Radius.Length));
+			return new WDist((int)Math.Min(Math.Max(0L, distance - Radius.Length), int.MaxValue));
+		}
+
+		WDist EndpointDistance(int2 endpoint, int2 p)
+		{
+			var distance = Exts.ISqrt(LengthSquaredLong(endpoint - p));
+			return new WDist((int)Math.Min(Math.Max(0L, distance - Radius.Length), int.MaxValue));
 		}
 
 		public WDist DistanceFromEdge(WPos pos, WPos origin, WRot orientation)
