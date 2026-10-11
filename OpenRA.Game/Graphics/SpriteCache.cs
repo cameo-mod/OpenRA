@@ -100,16 +100,13 @@ namespace OpenRA.Graphics
 			return GetFrames(fileSystem, filename, loaders);
 		}
 
+		// Maximum number of sprite files decoded and packed per load wave.
+		// Bounding the wave keeps the decoded frame corpus (the dominant transient
+		// allocation during loading) at a fraction of its all-at-once size.
+		const int MaxFilesPerWave = 256;
+
 		public void LoadReservations(ModData modData)
 		{
-			var pendingResolve = new List<(
-				string Filename,
-				int FrameIndex,
-				bool Premultiplied,
-				object CacheKey,
-				ISpriteFrame Frame,
-				Sprite[] SpritesForToken)>();
-
 			var cacheHits = 0;
 			var cacheMisses = 0;
 
@@ -180,136 +177,173 @@ namespace OpenRA.Graphics
 				if (fileSystem.TryGetPackageContaining(filename, out var pkg, out var pkgResolvedName))
 					filePackages[filename] = (pkg, pkgResolvedName);
 
-			// Phase A1: parallel I/O + decode.
-			// Per-package locks serialise access to non-thread-safe packages (ZipFile, MixFile) while
-			// allowing files from different packages to be read and decoded in parallel.
-			var fileFrames = new ConcurrentDictionary<string, ISpriteFrame[]>(StringComparer.Ordinal);
+			// Deterministic wave order: insertion order of reservationsByFilename.
+			var orderedFilenames = reservationsByFilename.Keys.ToList();
+
 			var packageLocks = new ConcurrentDictionary<IReadOnlyPackage, object>();
 
-			using (new Support.PerfTimer($"LoadReservations.LoadFrames ({fileCount} files, parallel)"))
+			// When borrowing shared builders, use the pool's resolved-sprite cache as our dedup map so
+			// new sprites we pack become available for future loads. With no pool, fall back to a local map.
+			// Spans all waves so sprites shared between files in different waves still deduplicate.
+			var spriteCache = pool != null
+				? pool.ResolvedSprites
+				: new Dictionary<(string, int, bool, object), Sprite>(fileCount);
+
+			var sessionStarted = false;
+			var spritesPacked = 0;
+
+			// Load in bounded waves: decode, resolve and pack MaxFilesPerWave files at a time so the
+			// decoded frame corpus (the dominant transient allocation during loading) stays a small
+			// fraction of the whole sprite set instead of being held until every file is decoded.
+			for (var waveStart = 0; waveStart < orderedFilenames.Count; waveStart += MaxFilesPerWave)
 			{
-				// Run Phase A1 on background threads so the main thread can keep the loading screen animated.
-				var phase1 = Task.Run(() =>
-					Parallel.ForEach(filePackages, kvp =>
-					{
-						var (filename, packageInfo) = kvp;
-						var (package, resolvedName) = packageInfo;
+				var waveEnd = Math.Min(waveStart + MaxFilesPerWave, orderedFilenames.Count);
 
-						var lockObj = packageLocks.GetOrAdd(package, _ => new object());
-						Stream stream;
-						lock (lockObj)
-							stream = package.GetStream(resolvedName);
+				// Phase A1: parallel I/O + decode for this wave only.
+				// Per-package locks serialise access to non-thread-safe packages (ZipFile, MixFile) while
+				// allowing files from different packages to be read and decoded in parallel.
+				var fileFrames = new ConcurrentDictionary<string, ISpriteFrame[]>(StringComparer.Ordinal);
 
-						if (stream == null)
-							return;
-
-						using (stream)
+				using (new Support.PerfTimer($"LoadReservations.LoadFrames (wave files {waveStart + 1}-{waveEnd} of {orderedFilenames.Count}, parallel)"))
+				{
+					// Run Phase A1 on background threads so the main thread can keep the loading screen animated.
+					var phase1 = Task.Run(() =>
+						Parallel.For(waveStart, waveEnd, i =>
 						{
-							foreach (var loader in loaders)
+							var filename = orderedFilenames[i];
+							if (!filePackages.TryGetValue(filename, out var packageInfo))
+								return;
+
+							var (package, resolvedName) = packageInfo;
+
+							var lockObj = packageLocks.GetOrAdd(package, _ => new object());
+							Stream stream;
+							lock (lockObj)
+								stream = package.GetStream(resolvedName);
+
+							if (stream == null)
+								return;
+
+							using (stream)
 							{
-								if (loader.TryParseSprite(stream, filename, out var frames, out _))
+								foreach (var loader in loaders)
 								{
-									fileFrames[filename] = frames;
-									break;
+									if (loader.TryParseSprite(stream, filename, out var frames, out _))
+									{
+										fileFrames[filename] = frames;
+										break;
+									}
 								}
 							}
-						}
-					}));
+						}));
 
-				// Redraw periodically so the window doesn't go black while Phase A1 runs on background threads.
-				while (!phase1.Wait(2000))
-					modData.LoadScreen?.Display();
-			}
+					// Redraw periodically so the window doesn't go black while Phase A1 runs on background threads.
+					while (!phase1.Wait(2000))
+						modData.LoadScreen?.Display();
+				}
 
-			// Phase A2: serial post-processing — builds pendingResolve from the parallel-decoded frames.
-			foreach (var (filename, tokens) in reservationsByFilename)
-			{
-				// Fall back to the full TryOpen search for any file the parallel pass didn't decode.
-				// TryGetPackageContaining only searches the fileIndex; TryOpen has an additional
-				// fallback that scans all mounted packages, which can find files that weren't indexed.
-				if (!fileFrames.TryGetValue(filename, out var loadedFrames))
-					loadedFrames = GetFrames(fileSystem, filename, loaders);
+				var pendingResolve = new List<(
+					string Filename,
+					int FrameIndex,
+					bool Premultiplied,
+					object CacheKey,
+					ISpriteFrame Frame,
+					Sprite[] SpritesForToken)>();
 
-				if (pool != null && loadedFrames != null)
-					pool.FrameCounts[filename] = loadedFrames.Length;
-
-				foreach (var token in tokens)
+				// Phase A2: serial post-processing — builds pendingResolve from the parallel-decoded frames.
+				for (var i = waveStart; i < waveEnd; i++)
 				{
-					if (spriteReservations.TryGetValue(token, out var rs))
+					var filename = orderedFilenames[i];
+					var tokens = reservationsByFilename[filename];
+
+					// Fall back to the full TryOpen search for any file the parallel pass didn't decode.
+					// TryGetPackageContaining only searches the fileIndex; TryOpen has an additional
+					// fallback that scans all mounted packages, which can find files that weren't indexed.
+					if (!fileFrames.TryGetValue(filename, out var loadedFrames))
+						loadedFrames = GetFrames(fileSystem, filename, loaders);
+
+					if (pool != null && loadedFrames != null)
+						pool.FrameCounts[filename] = loadedFrames.Length;
+
+					foreach (var token in tokens)
 					{
-						cacheMisses++;
-						if (loadedFrames != null)
+						if (spriteReservations.TryGetValue(token, out var rs))
 						{
-							var resolved = new Sprite[loadedFrames.Length];
-							resolvedSprites[token] = resolved;
-							if (rs.Frames != null && rs.Frames.Any(i => i >= loadedFrames.Length))
-								throw new InvalidOperationException($"{rs.Location}: {filename} does not contain frames: " +
-									string.Join(',', rs.Frames.Where(f => f >= loadedFrames.Length)));
-
-							var frames = rs.Frames != null ? rs.Frames : Enumerable.Range(0, loadedFrames.Length);
-							var total = rs.Frames != null ? rs.Frames.Length : loadedFrames.Length;
-
-							var j = 0;
-							foreach (var i in frames)
+							cacheMisses++;
+							if (loadedFrames != null)
 							{
-								var frame = loadedFrames[i];
-								if (rs.AdjustFrame != null)
-									frame = rs.AdjustFrame(frame, j++, total);
-								pendingResolve.Add((filename, i, rs.Premultiplied, rs.CacheKey, frame, resolved));
+								var resolved = new Sprite[loadedFrames.Length];
+								resolvedSprites[token] = resolved;
+								if (rs.Frames != null && rs.Frames.Any(i2 => i2 >= loadedFrames.Length))
+									throw new InvalidOperationException($"{rs.Location}: {filename} does not contain frames: " +
+										string.Join(',', rs.Frames.Where(f => f >= loadedFrames.Length)));
+
+								var frames = rs.Frames != null ? rs.Frames : Enumerable.Range(0, loadedFrames.Length);
+								var total = rs.Frames != null ? rs.Frames.Length : loadedFrames.Length;
+
+								var j = 0;
+								foreach (var i2 in frames)
+								{
+									var frame = loadedFrames[i2];
+									if (rs.AdjustFrame != null)
+										frame = rs.AdjustFrame(frame, j++, total);
+									pendingResolve.Add((filename, i2, rs.Premultiplied, rs.CacheKey, frame, resolved));
+								}
 							}
-						}
-						else
-						{
-							resolvedSprites[token] = null;
-							missingFiles[token] = (filename, rs.Location);
+							else
+							{
+								resolvedSprites[token] = null;
+								missingFiles[token] = (filename, rs.Location);
+							}
 						}
 					}
 				}
+
+				// Release this wave's decoded frames for collection before the next wave decodes.
+				fileFrames.Clear();
+
+				// When the sheet builder is adding sprites, it reserves height for the tallest sprite seen along the row.
+				// We can achieve better sheet packing by keeping sprites with similar heights together.
+				var orderedPendingResolve = pendingResolve.OrderBy(x => x.Frame.Size.Height);
+
+				using (new Support.PerfTimer($"LoadReservations.BuildSheets (wave {pendingResolve.Count} sprites)"))
+				{
+					// When borrowing builders, start a fresh sheet for this session so we don't try to
+					// mutate a sheet whose CPU buffer was released at the end of a previous LoadReservations.
+					if (pool != null && !sessionStarted && pendingResolve.Count > 0)
+					{
+						foreach (var sb in SheetBuilders.Values)
+							sb.BeginNewSession();
+
+						sessionStarted = true;
+					}
+
+					foreach (var (filename, frameIndex, premultiplied, cacheKey, frame, spritesForToken) in orderedPendingResolve)
+					{
+						// Premultiplied and non-premultiplied sprites must be cached separately
+						// to cover the case where the same image is requested in both versions.
+						spritesForToken[frameIndex] = spriteCache.GetOrAdd(
+							(filename, frameIndex, premultiplied, cacheKey),
+							_ =>
+							{
+								var sheetBuilder = SheetBuilders[SheetBuilder.FrameTypeToSheetType(frame.Type)];
+								return sheetBuilder.Add(frame, premultiplied);
+							});
+
+						modData.LoadScreen?.Display();
+					}
+				}
+
+				spritesPacked += pendingResolve.Count;
 			}
+
+			foreach (var sb in SheetBuilders.Values)
+				sb.Current?.ReleaseBuffer();
 
 			spriteReservations.Clear();
 			spriteReservations.TrimExcess();
 			reservationsByFilename.Clear();
 			reservationsByFilename.TrimExcess();
-
-			// When the sheet builder is adding sprites, it reserves height for the tallest sprite seen along the row.
-			// We can achieve better sheet packing by keeping sprites with similar heights together.
-			var orderedPendingResolve = pendingResolve.OrderBy(x => x.Frame.Size.Height);
-
-			// When borrowing shared builders, use the pool's resolved-sprite cache as our dedup map so
-			// new sprites we pack become available for future loads. With no pool, fall back to a local map.
-			var spriteCache = pool != null
-				? pool.ResolvedSprites
-				: new Dictionary<(string, int, bool, object), Sprite>(pendingResolve.Count);
-
-			using (new Support.PerfTimer($"LoadReservations.BuildSheets ({pendingResolve.Count} sprites)"))
-			{
-				// When borrowing builders, start a fresh sheet for this session so we don't try to
-				// mutate a sheet whose CPU buffer was released at the end of a previous LoadReservations.
-				if (pool != null && pendingResolve.Count > 0)
-				{
-					foreach (var sb in SheetBuilders.Values)
-						sb.BeginNewSession();
-				}
-
-				foreach (var (filename, frameIndex, premultiplied, cacheKey, frame, spritesForToken) in orderedPendingResolve)
-				{
-					// Premultiplied and non-premultiplied sprites must be cached separately
-					// to cover the case where the same image is requested in both versions.
-					spritesForToken[frameIndex] = spriteCache.GetOrAdd(
-						(filename, frameIndex, premultiplied, cacheKey),
-						_ =>
-						{
-							var sheetBuilder = SheetBuilders[SheetBuilder.FrameTypeToSheetType(frame.Type)];
-							return sheetBuilder.Add(frame, premultiplied);
-						});
-
-					modData.LoadScreen?.Display();
-				}
-
-				foreach (var sb in SheetBuilders.Values)
-					sb.Current?.ReleaseBuffer();
-			}
 
 			long totalBytes = 0;
 			var sheetCount = 0;
@@ -323,7 +357,7 @@ namespace OpenRA.Graphics
 				}
 			}
 
-			Log.Write("perf", $"LoadReservations: hits={cacheHits} misses={cacheMisses}, {sheetCount} resident sheets, {totalBytes / (1024 * 1024)} MiB total");
+			Log.Write("perf", $"LoadReservations: hits={cacheHits} misses={cacheMisses} packed={spritesPacked}, {sheetCount} resident sheets, {totalBytes / (1024 * 1024)} MiB total");
 		}
 
 		public Sprite[] ResolveSprites(int token)
