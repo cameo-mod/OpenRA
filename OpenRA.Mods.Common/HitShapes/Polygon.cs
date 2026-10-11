@@ -39,7 +39,7 @@ namespace OpenRA.Mods.Common.HitShapes
 
 		WVec[] combatOverlayVertsTop;
 		WVec[] combatOverlayVertsBottom;
-		int[] squares;
+		long[] squares;
 
 		public PolygonShape() { }
 
@@ -53,17 +53,27 @@ namespace OpenRA.Mods.Common.HitShapes
 			OuterRadius = new WDist(Points.Max(x => x.Length));
 			combatOverlayVertsTop = Points.Select(p => new WVec(p.X, p.Y, VerticalTopOffset)).ToArray();
 			combatOverlayVertsBottom = Points.Select(p => new WVec(p.X, p.Y, VerticalBottomOffset)).ToArray();
-			squares = new int[Points.Length];
-			squares[0] = (Points[0] - Points[^1]).LengthSquared;
+			squares = new long[Points.Length];
+			squares[0] = LengthSquaredLong(Points[0] - Points[^1]);
 			for (var i = 1; i < Points.Length; i++)
-				squares[i] = (Points[i] - Points[i - 1]).LengthSquared;
+				squares[i] = LengthSquaredLong(Points[i] - Points[i - 1]);
 		}
 
-		static int DistanceSquaredFromLineSegment(int2 c, int2 a, int2 b, int ab2)
+		static long LengthSquaredLong(int2 v)
+		{
+			return (long)v.X * v.X + (long)v.Y * v.Y;
+		}
+
+		// All squared distances are computed in long: int2.LengthSquared wraps
+		// silently past ~46340 units and a wrapped-negative min2 or min2 + z*z
+		// crashes Exts.ISqrt (InvalidOperationException) — observed live in a
+		// 4v4 campaign game (sqrt of -1868759040). Long math preserves every
+		// result inside the previously valid int domain bit-for-bit.
+		static long DistanceSquaredFromLineSegment(int2 c, int2 a, int2 b, long ab2)
 		{
 			var ac = c - a;
-			var ac2 = ac.LengthSquared;
-			var bc2 = (c - b).LengthSquared;
+			var ac2 = LengthSquaredLong(ac);
+			var bc2 = LengthSquaredLong(c - b);
 
 			// c is closest to point a
 			if (ac2 + ab2 <= bc2)
@@ -76,19 +86,22 @@ namespace OpenRA.Mods.Common.HitShapes
 			// c is closest to its unknown orthogonal projection (p) onto the line spanned by b with a as the origin
 			// Cast to a long for the calculations to avoid overflows
 			var ab = b - a;
-			var ap2 = ac.X * ab.X + ac.Y * ab.Y;
-			var ap = new int2((int)((long)ab.X * ap2 / ab2), (int)((long)ab.Y * ap2 / ab2));
+			var ap2 = (long)ac.X * ab.X + (long)ac.Y * ab.Y;
+			var apX = ab.X * ap2 / ab2;
+			var apY = ab.Y * ap2 / ab2;
+			var dx = ac.X - apX;
+			var dy = ac.Y - apY;
 
 			// Length of vector pc squared.
-			return (ac - ap).LengthSquared;
+			return dx * dx + dy * dy;
 		}
 
 		public WDist DistanceFromEdge(in WVec v)
 		{
 			var p = new int2(v.X, v.Y);
-			var z = Math.Abs(v.Z);
+			var z = (long)Math.Abs(v.Z);
 			if (Points.PolygonContains(p))
-				return new WDist(z);
+				return new WDist((int)Math.Min(z, int.MaxValue));
 
 			var min2 = DistanceSquaredFromLineSegment(p, Points[^1], Points[0], squares[0]);
 			for (var i = 1; i < Points.Length; i++)
@@ -98,7 +111,8 @@ namespace OpenRA.Mods.Common.HitShapes
 					min2 = d2;
 			}
 
-			return new WDist(Exts.ISqrt(min2 + z * z));
+			var dist = Exts.ISqrt(min2 + z * z);
+			return new WDist((int)Math.Min(dist, int.MaxValue));
 		}
 
 		public WDist DistanceFromEdge(WPos pos, WPos origin, WRot orientation)
