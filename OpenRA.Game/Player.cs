@@ -242,14 +242,22 @@ namespace OpenRA
 		{
 			if (IsBot)
 			{
-				var botInfo = botInfos.First(b => b.Type == BotType);
 				var botsOfSameType = World.Players.Where(c => c.BotType == BotType).ToArray();
-				return FluentProvider.GetMessage(EnumeratedBotName,
-					"name", FluentProvider.GetMessage(botInfo.Name),
-					"number", botsOfSameType.IndexOf(this) + 1);
+				return ResolveBotPlayerName(botInfos, BotType, PlayerName, botsOfSameType.IndexOf(this) + 1);
 			}
 
 			return PlayerName;
+		}
+
+		internal static string ResolveBotPlayerName(IEnumerable<IBotInfo> botInfos, string botType, string playerName, int botNumber)
+		{
+			var botInfo = botInfos.FirstOrDefault(b => b.Type == botType);
+			if (botInfo == null)
+				return playerName;
+
+			return FluentProvider.GetMessage(EnumeratedBotName,
+				"name", FluentProvider.GetMessage(botInfo.Name),
+				"number", botNumber);
 		}
 
 		public PlayerRelationship RelationshipWith(Player other)
