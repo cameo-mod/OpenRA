@@ -8,9 +8,12 @@
  */
 #endregion
 
+using System;
+
 namespace OpenRA.Mods.AS.Traits
 {
 	/// <summary>One-release migration alias. Canonical independent stations are unconditional.</summary>
+	[Obsolete("Use AttackGarrisoned instead.")]
 	public class AttackOpenToppedInfo : OpenRA.Mods.Common.Traits.AttackGarrisonedInfo
 	{
 		public override void RulesetLoaded(Ruleset rules, ActorInfo actor)

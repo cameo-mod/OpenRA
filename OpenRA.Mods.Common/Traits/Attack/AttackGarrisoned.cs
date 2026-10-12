@@ -88,7 +88,11 @@ namespace OpenRA.Mods.Common.Traits
 		public new readonly AttackGarrisonedInfo Info;
 		readonly Actor host;
 		readonly FirePortStation[] stations;
+		readonly List<Actor> reconcileOccupants = [];
+		readonly HashSet<Actor> reconcileOccupantSet = [];
 		INotifyAttack[] notifyAttacks;
+		Cargo[] cargoContainers;
+		IFirePortOccupantProvider[] occupantProviders;
 		BodyOrientation coords;
 		PassengerFirePortAttackActivity activeActivity;
 		public IReadOnlyList<FirePortStation> Stations => stations;
@@ -134,6 +138,8 @@ namespace OpenRA.Mods.Common.Traits
 		protected override void Created(Actor self)
 		{
 			notifyAttacks = self.TraitsImplementing<INotifyAttack>().ToArray();
+			cargoContainers = self.TraitsImplementing<Cargo>().ToArray();
+			occupantProviders = self.TraitsImplementing<IFirePortOccupantProvider>().ToArray();
 			coords = self.TraitOrDefault<BodyOrientation>();
 			base.Created(self);
 		}
@@ -142,12 +148,23 @@ namespace OpenRA.Mods.Common.Traits
 
 		void Enter(Actor actor)
 		{
-			if (notifyAttacks == null || actor == null || actor.IsDead || stations.Any(p => p.Occupant == actor))
+			if (notifyAttacks == null || actor == null || actor.IsDead)
 				return;
-			var station = stations.FirstOrDefault(p => p.Occupant == null);
+
+			FirePortStation station = null;
+			foreach (var candidate in stations)
+			{
+				if (candidate.Occupant == actor)
+					return;
+
+				if (station == null && candidate.Occupant == null)
+					station = candidate;
+			}
+
 			if (station == null)
 				return;
 			station.Occupant = actor;
+			station.ScanTicks = station.PortIndex % Info.ScanInterval + 1;
 			station.Arms = actor.TraitsImplementing<Armament>().Where(a => Info.Armaments.Contains(a.Info.Name)).ToArray();
 			station.AutoTarget = actor.TraitOrDefault<AutoTarget>();
 			station.Facing = actor.TraitOrDefault<IFacing>();
@@ -181,27 +198,71 @@ namespace OpenRA.Mods.Common.Traits
 				if (station.Occupant == actor)
 					Exit(station);
 		}
-		static void Clear(FirePortStation station)
+		void Clear(FirePortStation station)
 		{
 			station.RequestedTarget = station.OpportunityTarget = Target.Invalid;
 			station.RequestedForce = station.OpportunityForce = station.Persistent = station.Retaliating = false;
-			station.ScanTicks = 0;
+			station.ScanTicks = station.PortIndex % Info.ScanInterval + 1;
+		}
+		void AddReconcileOccupant(Actor actor)
+		{
+			if (actor == null || actor.IsDead || !reconcileOccupantSet.Add(actor))
+				return;
+
+			var index = 0;
+			while (index < reconcileOccupants.Count)
+			{
+				var occupant = reconcileOccupants[index];
+				if (occupant.ActorID > actor.ActorID)
+					break;
+
+				index++;
+			}
+
+			reconcileOccupants.Insert(index, actor);
 		}
 		void Reconcile()
 		{
-			var occupants = host.TraitsImplementing<Cargo>().SelectMany(c => c.Passengers)
-				.Concat(host.TraitsImplementing<IFirePortOccupantProvider>().SelectMany(p => p.Occupants)).Where(a => !a.IsDead).Distinct().ToArray();
+			reconcileOccupants.Clear();
+			reconcileOccupantSet.Clear();
+			foreach (var cargo in cargoContainers)
+			{
+				if (cargo.Passengers is IList<Actor> passengers)
+					for (var i = 0; i < passengers.Count; i++)
+						AddReconcileOccupant(passengers[i]);
+				else
+					foreach (var actor in cargo.Passengers)
+						AddReconcileOccupant(actor);
+			}
+
+			foreach (var provider in occupantProviders)
+			{
+				if (provider.Occupants is IList<Actor> occupants)
+					for (var i = 0; i < occupants.Count; i++)
+						AddReconcileOccupant(occupants[i]);
+				else
+					foreach (var actor in provider.Occupants)
+						AddReconcileOccupant(actor);
+			}
+
 			var changed = false;
+			var hasFreeStation = false;
 			foreach (var station in stations)
-				if (station.Occupant != null && !occupants.Contains(station.Occupant))
+			{
+				if (station.Occupant != null && !reconcileOccupantSet.Contains(station.Occupant))
 				{
 					Exit(station);
 					changed = true;
 				}
+
+				if (station.Occupant == null)
+					hasFreeStation = true;
+			}
+
 			// Reconcile entry/load and exits. Existing bindings never move. Overflow gets
 			// a station only when a free port appears, not by modulo sharing.
-			if (changed || stations.Any(s => s.Occupant == null))
-				foreach (var actor in occupants.OrderBy(a => a.ActorID))
+			if (changed || hasFreeStation)
+				foreach (var actor in reconcileOccupants)
 					Enter(actor);
 		}
 		void INotifyPassengerEntered.OnPassengerEntered(Actor self, Actor actor) => Enter(actor);
@@ -308,15 +369,35 @@ namespace OpenRA.Mods.Common.Traits
 				: target.Type == TargetType.FrozenActor && station.AutoTarget.HasValidTargetPriority(host, target.FrozenActor.Owner, target.FrozenActor.TargetTypes);
 		}
 		public IReadOnlyList<Target> ForecastTargets() => stations.Select(s => s.Occupant == null ? Target.Invalid : Scan(s)).ToArray();
-		public override IEnumerable<Armament> ChooseArmamentsForTarget(Target target, bool forceAttack) =>
-			stations.SelectMany(s => Eligible(s, target, forceAttack, false));
-		public override bool HasAnyValidWeapons(in Target target, bool checkForCenterTargetingWeapons = false, bool reloadingIsInvalid = false) =>
-			ChooseArmamentsForTarget(target, false).Any(a => (!checkForCenterTargetingWeapons || a.Weapon.TargetActorCenter)
+		public override IEnumerable<Armament> ChooseArmamentsForTarget(Target target, bool forceAttack)
+		{
+			if (IsTraitDisabled)
+				return [];
+
+			return stations.SelectMany(s => Eligible(s, target, forceAttack, false));
+		}
+		public override bool HasAnyValidWeapons(in Target target, bool checkForCenterTargetingWeapons = false, bool reloadingIsInvalid = false)
+		{
+			if (IsTraitDisabled)
+				return false;
+
+			return ChooseArmamentsForTarget(target, false).Any(a => (!checkForCenterTargetingWeapons || a.Weapon.TargetActorCenter)
 				&& (!reloadingIsInvalid || !a.IsReloading));
-		public override WDist GetMaximumRangeVersusTarget(in Target target) =>
-			ChooseArmamentsForTarget(target, true).Select(a => a.MaxRange()).DefaultIfEmpty(WDist.Zero).Max();
-		public override WDist GetMinimumRangeVersusTarget(in Target target) =>
-			ChooseArmamentsForTarget(target, true).Select(a => a.Weapon.MinRange).DefaultIfEmpty(WDist.Zero).Min();
+		}
+		public override WDist GetMaximumRangeVersusTarget(in Target target)
+		{
+			if (IsTraitDisabled)
+				return WDist.Zero;
+
+			return ChooseArmamentsForTarget(target, true).Select(a => a.MaxRange()).DefaultIfEmpty(WDist.Zero).Max();
+		}
+		public override WDist GetMinimumRangeVersusTarget(in Target target)
+		{
+			if (IsTraitDisabled)
+				return WDist.Zero;
+
+			return ChooseArmamentsForTarget(target, true).Select(a => a.Weapon.MinRange).DefaultIfEmpty(WDist.Zero).Min();
+		}
 
 		internal void Request(PassengerFirePortAttackActivity activity, Target target, bool force)
 		{

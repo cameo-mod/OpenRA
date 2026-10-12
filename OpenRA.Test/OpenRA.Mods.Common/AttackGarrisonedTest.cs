@@ -193,6 +193,7 @@ namespace OpenRA.Test
 			var f = new Fixture(cargo: cargo); f.Enter(f.Rifle, cargo); f.Enter(f.Rocket, cargo);
 			var rng = f.World.SharedRandom.Last;
 			f.Tick();
+			f.Tick();
 			Assert.That(f.Attack.Stations.Select(s => s.OpportunityTarget.Actor), Is.EqualTo(new[] { f.Infantry, f.Tank }));
 			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2), "One host notification per actual fire");
 			Assert.That(f.World.SharedRandom.Last, Is.EqualTo(rng));
@@ -203,6 +204,7 @@ namespace OpenRA.Test
 		{
 			var f = new Fixture(); f.Enter(f.Rifle); f.Enter(f.Rocket);
 			f.Infantry.Trait<Space>().SetCenterPosition(f.Infantry, new WPos(6000, 0, 0));
+			f.Tick();
 			f.Tick();
 			Assert.That(f.Attack.Stations[0].OpportunityTarget.Actor, Is.SameAs(f.Tank));
 			Assert.That(f.Attack.Stations[1].OpportunityTarget.Actor, Is.SameAs(f.Tank));
@@ -348,13 +350,16 @@ namespace OpenRA.Test
 			Assert.That(attack.Stations.Select(s => s.Occupant), Is.EqualTo(new[] { f.Rifle, f.Rocket }));
 			Assert.That(f.Attack.Stations.All(s => s.Occupant == null), Is.True);
 			((ITick)attack).Tick(next);
+			((ITick)attack).Tick(next);
 			Assert.That(f.Recorder.Events, Is.Empty);
 			Assert.That(next.Trait<Recorder>().Events.Count, Is.EqualTo(2));
 		}
 		[Test]
 		public void AliasCreatesTheCanonicalRuntime()
 		{
+#pragma warning disable CS0618 // Verify the one-release compatibility alias.
 			var f = new Fixture(schema: new OpenRA.Mods.AS.Traits.AttackOpenToppedInfo());
+#pragma warning restore CS0618
 			Assert.That(f.Host.Trait<AttackGarrisoned>().GetType(), Is.EqualTo(typeof(AttackGarrisoned)));
 		}
 		[Test]
@@ -381,8 +386,32 @@ namespace OpenRA.Test
 			Assert.That(f.Attack.CanFireFromAnyPort(Target.FromActor(f.Tank)), Is.False);
 			Assert.That(f.Recorder.Events.Count, Is.EqualTo(count));
 			f.Host.RevokeCondition(paused); f.Tick();
-			f.Host.GrantCondition("disabled"); f.Tick();
+			f.Host.GrantCondition("disabled");
+			var target = Target.FromActor(f.Tank);
+			Assert.That(f.Attack.ChooseArmamentsForTarget(target, true), Is.Empty);
+			Assert.That(f.Attack.HasAnyValidWeapons(target), Is.False);
+			Assert.That(f.Attack.GetMaximumRangeVersusTarget(target), Is.EqualTo(WDist.Zero));
+			Assert.That(f.Attack.GetMinimumRangeVersusTarget(target), Is.EqualTo(WDist.Zero));
+			f.Tick();
 			Assert.That(f.Attack.CanFireFromAnyPort(Target.FromActor(f.Tank)), Is.False);
+		}
+		[Test]
+		public void StationScansAreStaggeredByStablePortIndex()
+		{
+			var f = new Fixture([WVec.Zero, WVec.Zero, WVec.Zero]);
+			var third = f.Create("rifle", f.Own, WPos.Zero);
+			f.Enter(f.Rifle); f.Enter(f.Rocket); f.Enter(third);
+			f.Host.Trait<AutoTarget>().SetStance(f.Host, UnitStance.HoldFire);
+			var scanTicks = typeof(FirePortStation).GetField("ScanTicks", BindingFlags.Instance | BindingFlags.NonPublic)
+				?? throw new InvalidOperationException("Fire-port scan cadence field was not found.");
+			int[] ReadScanTicks() => f.Attack.Stations.Select(s => (int)scanTicks.GetValue(s)).ToArray();
+			Assert.That(ReadScanTicks(), Is.EqualTo(new[] { 1, 2, 3 }));
+			f.Tick();
+			Assert.That(ReadScanTicks(), Is.EqualTo(new[] { 5, 1, 2 }));
+			f.Tick();
+			Assert.That(ReadScanTicks(), Is.EqualTo(new[] { 4, 5, 1 }));
+			f.Tick();
+			Assert.That(ReadScanTicks(), Is.EqualTo(new[] { 3, 4, 5 }));
 		}
 		[Test]
 		public void CapturedHostCannotResumeAnOldOwnersActivity()
@@ -402,7 +431,16 @@ namespace OpenRA.Test
 			var f = new Fixture(); f.Enter(f.Rifle);
 			f.Infantry.Trait<Space>().SetCenterPosition(f.Infantry, new WPos(-2048, 0, 0));
 			Assert.That(f.Attack.CanFireFromPort(0, Target.FromActor(f.Infantry)), Is.True);
+#pragma warning disable CS0618 // Verify the one-release compatibility alias.
 			Assert.That(typeof(OpenRA.Mods.AS.Traits.AttackOpenToppedInfo).BaseType, Is.EqualTo(typeof(AttackGarrisonedInfo)));
+#pragma warning restore CS0618
+		}
+		[Test]
+		public void LegacyEngineAliasCarriesObsoleteGuidance()
+		{
+			var alias = typeof(OpenRA.Mods.AS.Traits.GarrisonerInfo).Assembly.GetType("OpenRA.Mods.AS.Traits.AttackOpenToppedInfo");
+			var obsolete = alias.GetCustomAttribute<ObsoleteAttribute>();
+			Assert.That(obsolete.Message, Is.EqualTo("Use AttackGarrisoned instead."));
 		}
 		[Test]
 		public void ReadOnlyForecastDoesNotChangeStateOrRngAndScriptRepeats()
