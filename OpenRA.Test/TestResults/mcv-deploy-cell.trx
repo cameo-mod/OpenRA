@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d68ca1a8-f639-4910-bbb6-71356e583a91" name="AedisToru@CAMEODEVPC 2026-10-09 19:19:16" runUser="CAMEODEVPC\AedisToru" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-09T19:19:16.6311485+02:00" queuing="2026-10-09T19:19:16.6311487+02:00" start="2026-10-09T19:19:15.4046264+02:00" finish="2026-10-09T19:19:16.6360444+02:00" />
+  <TestSettings name="default" id="012f345d-fca3-4f08-bc09-d62dd88cb607">
+    <Deployment runDeploymentRoot="AedisToru_CAMEODEVPC_2026-10-09_19_19_16" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="84195c0f-b384-4a36-b8e4-789685f12746" testId="8afef4de-0013-2a22-673e-69a82d6b4703" testName="EmptyAnnulusIsAnEmptyFailedSweep" computerName="CAMEODEVPC" duration="00:00:00.0101359" startTime="2026-10-09T19:19:16.4995303+02:00" endTime="2026-10-09T19:19:16.5096047+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="84195c0f-b384-4a36-b8e4-789685f12746" />
+    <UnitTestResult executionId="127e94c0-e189-425e-b18f-0a8d11e271a8" testId="90204c55-4c2c-3e9b-178b-f3c68617b404" testName="FailedSweepTalliesAllUniqueRejections(True)" computerName="CAMEODEVPC" duration="00:00:00.0007060" startTime="2026-10-09T19:19:16.5138150+02:00" endTime="2026-10-09T19:19:16.5145209+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="127e94c0-e189-425e-b18f-0a8d11e271a8" />
+    <UnitTestResult executionId="e4efc6d7-a364-4ed5-baac-035695b66b8c" testId="b601cd5d-b72d-0b33-4b1b-a9a06ede863a" testName="EqualSourceTargetPreservesSuppliedShuffleOrder" computerName="CAMEODEVPC" duration="00:00:00.0029560" startTime="2026-10-09T19:19:16.5107914+02:00" endTime="2026-10-09T19:19:16.5137469+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e4efc6d7-a364-4ed5-baac-035695b66b8c" />
+    <UnitTestResult executionId="11e07019-8573-4dee-b57f-6ca76af44fba" testId="5b9981b5-b133-2db5-c16e-0beedb2ddcfc" testName="LegacySearchRemainsDefault" computerName="CAMEODEVPC" duration="00:00:00.0009100" startTime="2026-10-09T19:19:16.5239330+02:00" endTime="2026-10-09T19:19:16.5248423+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="11e07019-8573-4dee-b57f-6ca76af44fba" />
+    <UnitTestResult executionId="fc220ccc-c95e-4a81-8676-82ec9569e620" testId="ef3c0c4e-2a16-0116-af11-526e72f1a08b" testName="FallbackSkipsUnreachableNearestAndKeepsSearching" computerName="CAMEODEVPC" duration="00:00:00.0074500" startTime="2026-10-09T19:19:16.5159447+02:00" endTime="2026-10-09T19:19:16.5233944+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fc220ccc-c95e-4a81-8676-82ec9569e620" />
+    <UnitTestResult executionId="fd7e7de7-cd81-4194-acff-6b29fe087b6a" testId="a0b848f6-549c-78a3-18c1-eac7b973c7af" testName="FailedSweepTalliesAllUniqueRejections(False)" computerName="CAMEODEVPC" duration="00:00:00.0002240" startTime="2026-10-09T19:19:16.5145299+02:00" endTime="2026-10-09T19:19:16.5147537+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fd7e7de7-cd81-4194-acff-6b29fe087b6a" />
+    <UnitTestResult executionId="ca65ec25-58ae-43ed-9379-72704f713d87" testId="8918a3df-964a-a2be-f1d1-369a07c5e8ab" testName="FirstPassSkipsUnreachablePlaceableCandidate" computerName="CAMEODEVPC" duration="00:00:00.0005050" startTime="2026-10-09T19:19:16.5234127+02:00" endTime="2026-10-09T19:19:16.5239173+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ca65ec25-58ae-43ed-9379-72704f713d87" />
+    <UnitTestResult executionId="f529d23f-6170-49bd-91ee-5ba74dbb7880" testId="a718a03a-8203-f043-f106-4d403f5d4a24" testName="UnreachableFallbackDoesNotDiscardValidWeightedCandidate" computerName="CAMEODEVPC" duration="00:00:00.0002990" startTime="2026-10-09T19:19:16.5248601+02:00" endTime="2026-10-09T19:19:16.5251594+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f529d23f-6170-49bd-91ee-5ba74dbb7880" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="UnreachableFallbackDoesNotDiscardValidWeightedCandidate" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="a718a03a-8203-f043-f106-4d403f5d4a24">
+      <Execution id="f529d23f-6170-49bd-91ee-5ba74dbb7880" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="UnreachableFallbackDoesNotDiscardValidWeightedCandidate" />
+    </UnitTest>
+    <UnitTest name="FallbackSkipsUnreachableNearestAndKeepsSearching" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="ef3c0c4e-2a16-0116-af11-526e72f1a08b">
+      <Execution id="fc220ccc-c95e-4a81-8676-82ec9569e620" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="FallbackSkipsUnreachableNearestAndKeepsSearching" />
+    </UnitTest>
+    <UnitTest name="FailedSweepTalliesAllUniqueRejections(False)" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="a0b848f6-549c-78a3-18c1-eac7b973c7af">
+      <Execution id="fd7e7de7-cd81-4194-acff-6b29fe087b6a" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="FailedSweepTalliesAllUniqueRejections(False)" />
+    </UnitTest>
+    <UnitTest name="FailedSweepTalliesAllUniqueRejections(True)" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="90204c55-4c2c-3e9b-178b-f3c68617b404">
+      <Execution id="127e94c0-e189-425e-b18f-0a8d11e271a8" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="FailedSweepTalliesAllUniqueRejections(True)" />
+    </UnitTest>
+    <UnitTest name="FirstPassSkipsUnreachablePlaceableCandidate" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="8918a3df-964a-a2be-f1d1-369a07c5e8ab">
+      <Execution id="ca65ec25-58ae-43ed-9379-72704f713d87" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="FirstPassSkipsUnreachablePlaceableCandidate" />
+    </UnitTest>
+    <UnitTest name="EqualSourceTargetPreservesSuppliedShuffleOrder" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="b601cd5d-b72d-0b33-4b1b-a9a06ede863a">
+      <Execution id="e4efc6d7-a364-4ed5-baac-035695b66b8c" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="EqualSourceTargetPreservesSuppliedShuffleOrder" />
+    </UnitTest>
+    <UnitTest name="EmptyAnnulusIsAnEmptyFailedSweep" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="8afef4de-0013-2a22-673e-69a82d6b4703">
+      <Execution id="84195c0f-b384-4a36-b8e4-789685f12746" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="EmptyAnnulusIsAnEmptyFailedSweep" />
+    </UnitTest>
+    <UnitTest name="LegacySearchRemainsDefault" storage="c:\cameo-wt\sol-mcv-deploy-engine\bin\openra.test.dll" id="5b9981b5-b133-2db5-c16e-0beedb2ddcfc">
+      <Execution id="11e07019-8573-4dee-b57f-6ca76af44fba" />
+      <TestMethod codeBase="C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.McvDeployCellSearchTest" name="LegacySearchRemainsDefault" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="8afef4de-0013-2a22-673e-69a82d6b4703" executionId="84195c0f-b384-4a36-b8e4-789685f12746" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="90204c55-4c2c-3e9b-178b-f3c68617b404" executionId="127e94c0-e189-425e-b18f-0a8d11e271a8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b601cd5d-b72d-0b33-4b1b-a9a06ede863a" executionId="e4efc6d7-a364-4ed5-baac-035695b66b8c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5b9981b5-b133-2db5-c16e-0beedb2ddcfc" executionId="11e07019-8573-4dee-b57f-6ca76af44fba" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ef3c0c4e-2a16-0116-af11-526e72f1a08b" executionId="fc220ccc-c95e-4a81-8676-82ec9569e620" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a0b848f6-549c-78a3-18c1-eac7b973c7af" executionId="fd7e7de7-cd81-4194-acff-6b29fe087b6a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8918a3df-964a-a2be-f1d1-369a07c5e8ab" executionId="ca65ec25-58ae-43ed-9379-72704f713d87" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a718a03a-8203-f043-f106-4d403f5d4a24" executionId="f529d23f-6170-49bd-91ee-5ba74dbb7880" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="8" executed="8" passed="8" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>NUnit Adapter 4.6.0.0: Test execution started&#xD;
+Running selected tests in C:\cameo-wt\sol-mcv-deploy-engine\bin\OpenRA.Test.dll&#xD;
+   NUnit3TestExecutor discovered 8 of 8 NUnit test cases using Current Discovery mode, Non-Explicit run&#xD;
+NUnit Adapter 4.6.0.0: Test execution complete&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>
