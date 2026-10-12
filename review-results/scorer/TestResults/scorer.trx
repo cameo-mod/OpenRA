@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="f0d46112-3301-4734-8a10-d8a1f9defb4a" name="AedisToru@CAMEODEVPC 2026-10-07 22:20:31" runUser="CAMEODEVPC\AedisToru" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-07T22:20:31.5921331+02:00" queuing="2026-10-07T22:20:31.5921335+02:00" start="2026-10-07T22:20:29.8998743+02:00" finish="2026-10-07T22:20:31.5979012+02:00" />
+  <TestSettings name="default" id="fc8cd231-94a9-4cc2-9e02-396d4dee3982">
+    <Deployment runDeploymentRoot="AedisToru_CAMEODEVPC_2026-10-07_22_20_31" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="8505a724-73e9-49c3-8e76-99967692375b" testId="1dc0115f-8284-4d7a-6bfc-c1ba8c421878" testName="FractionalVersusDoesNotTruncate" computerName="CAMEODEVPC" duration="00:00:00.0013540" startTime="2026-10-07T22:20:31.4271302+02:00" endTime="2026-10-07T22:20:31.4284844+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8505a724-73e9-49c3-8e76-99967692375b" />
+    <UnitTestResult executionId="f9b8a6d3-586e-48d5-a509-3b5ef668fc30" testId="b9b415ff-af6a-cc29-a476-5e3b6c7fd52f" testName="ExactTieUsesActorId" computerName="CAMEODEVPC" duration="00:00:00.0001670" startTime="2026-10-07T22:20:31.4269515+02:00" endTime="2026-10-07T22:20:31.4271180+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f9b8a6d3-586e-48d5-a509-3b5ef668fc30" />
+    <UnitTestResult executionId="8213e323-2643-48f5-94e9-711e3d66be76" testId="98f1ac28-a953-a65b-f87a-d876002a0644" testName="VersusWinsBeforeDistance" computerName="CAMEODEVPC" duration="00:00:00.0001150" startTime="2026-10-07T22:20:31.4297417+02:00" endTime="2026-10-07T22:20:31.4298563+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8213e323-2643-48f5-94e9-711e3d66be76" />
+    <UnitTestResult executionId="36184bd0-d397-4760-a280-70446eb9d38f" testId="bd9f5a51-d6ef-a170-83e9-af60bd14a8c1" testName="LargeProductsDoNotOverflow" computerName="CAMEODEVPC" duration="00:00:00.0008380" startTime="2026-10-07T22:20:31.4286771+02:00" endTime="2026-10-07T22:20:31.4295150+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="36184bd0-d397-4760-a280-70446eb9d38f" />
+    <UnitTestResult executionId="d146bfdc-b0d3-48d7-b88e-dca9b3b4fb7f" testId="49240fd0-3227-4152-4cc8-5f375c95c182" testName="ArmorModifiersCompose" computerName="CAMEODEVPC" duration="00:00:00.0118940" startTime="2026-10-07T22:20:31.4124666+02:00" endTime="2026-10-07T22:20:31.4242582+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d146bfdc-b0d3-48d7-b88e-dca9b3b4fb7f" />
+    <UnitTestResult executionId="cce41401-c468-4e6d-b616-ffc6f59d518d" testId="d43f9fa6-4261-237c-0174-704cd3cf5d0a" testName="ImmunityIsZero" computerName="CAMEODEVPC" duration="00:00:00.0001730" startTime="2026-10-07T22:20:31.4284952+02:00" endTime="2026-10-07T22:20:31.4286681+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cce41401-c468-4e6d-b616-ffc6f59d518d" />
+    <UnitTestResult executionId="ee9b99a2-4a5c-40e9-bfe2-68d896d4eb2a" testId="11227701-9d46-d5d8-4d26-4cfb7a258d0d" testName="MissingArmorIsNeutral" computerName="CAMEODEVPC" duration="00:00:00.0002040" startTime="2026-10-07T22:20:31.4295275+02:00" endTime="2026-10-07T22:20:31.4297316+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee9b99a2-4a5c-40e9-bfe2-68d896d4eb2a" />
+    <UnitTestResult executionId="6f521a65-51e1-4bd5-be6c-fd95c7051c8e" testId="aea198c5-b7ad-53eb-f42f-c04a8a39c5b9" testName="EqualVersusPrefersNearest" computerName="CAMEODEVPC" duration="00:00:00.0007380" startTime="2026-10-07T22:20:31.4261830+02:00" endTime="2026-10-07T22:20:31.4269209+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6f521a65-51e1-4bd5-be6c-fd95c7051c8e" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="MissingArmorIsNeutral" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="11227701-9d46-d5d8-4d26-4cfb7a258d0d">
+      <Execution id="ee9b99a2-4a5c-40e9-bfe2-68d896d4eb2a" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="MissingArmorIsNeutral" />
+    </UnitTest>
+    <UnitTest name="VersusWinsBeforeDistance" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="98f1ac28-a953-a65b-f87a-d876002a0644">
+      <Execution id="8213e323-2643-48f5-94e9-711e3d66be76" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="VersusWinsBeforeDistance" />
+    </UnitTest>
+    <UnitTest name="FractionalVersusDoesNotTruncate" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="1dc0115f-8284-4d7a-6bfc-c1ba8c421878">
+      <Execution id="8505a724-73e9-49c3-8e76-99967692375b" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="FractionalVersusDoesNotTruncate" />
+    </UnitTest>
+    <UnitTest name="ExactTieUsesActorId" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="b9b415ff-af6a-cc29-a476-5e3b6c7fd52f">
+      <Execution id="f9b8a6d3-586e-48d5-a509-3b5ef668fc30" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="ExactTieUsesActorId" />
+    </UnitTest>
+    <UnitTest name="LargeProductsDoNotOverflow" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="bd9f5a51-d6ef-a170-83e9-af60bd14a8c1">
+      <Execution id="36184bd0-d397-4760-a280-70446eb9d38f" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="LargeProductsDoNotOverflow" />
+    </UnitTest>
+    <UnitTest name="ImmunityIsZero" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="d43f9fa6-4261-237c-0174-704cd3cf5d0a">
+      <Execution id="cce41401-c468-4e6d-b616-ffc6f59d518d" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="ImmunityIsZero" />
+    </UnitTest>
+    <UnitTest name="EqualVersusPrefersNearest" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="aea198c5-b7ad-53eb-f42f-c04a8a39c5b9">
+      <Execution id="6f521a65-51e1-4bd5-be6c-fd95c7051c8e" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="EqualVersusPrefersNearest" />
+    </UnitTest>
+    <UnitTest name="ArmorModifiersCompose" storage="c:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" id="49240fd0-3227-4152-4cc8-5f375c95c182">
+      <Execution id="d146bfdc-b0d3-48d7-b88e-dca9b3b4fb7f" />
+      <TestMethod codeBase="C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll" adapterTypeName="executor://nunit3testexecutor/" className="OpenRA.Test.WeaponTargetScoreTest" name="ArmorModifiersCompose" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1dc0115f-8284-4d7a-6bfc-c1ba8c421878" executionId="8505a724-73e9-49c3-8e76-99967692375b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b9b415ff-af6a-cc29-a476-5e3b6c7fd52f" executionId="f9b8a6d3-586e-48d5-a509-3b5ef668fc30" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="98f1ac28-a953-a65b-f87a-d876002a0644" executionId="8213e323-2643-48f5-94e9-711e3d66be76" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bd9f5a51-d6ef-a170-83e9-af60bd14a8c1" executionId="36184bd0-d397-4760-a280-70446eb9d38f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="49240fd0-3227-4152-4cc8-5f375c95c182" executionId="d146bfdc-b0d3-48d7-b88e-dca9b3b4fb7f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d43f9fa6-4261-237c-0174-704cd3cf5d0a" executionId="cce41401-c468-4e6d-b616-ffc6f59d518d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11227701-9d46-d5d8-4d26-4cfb7a258d0d" executionId="ee9b99a2-4a5c-40e9-bfe2-68d896d4eb2a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="aea198c5-b7ad-53eb-f42f-c04a8a39c5b9" executionId="6f521a65-51e1-4bd5-be6c-fd95c7051c8e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="8" executed="8" passed="8" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>NUnit Adapter 4.6.0.0: Test execution started&#xD;
+Running all tests in C:\cameo-wt\codex-multi-turret-engine\review-results\bin\scorer.dll&#xD;
+   NUnit3TestExecutor discovered 8 of 8 NUnit test cases using Current Discovery mode, Non-Explicit run&#xD;
+NUnit Adapter 4.6.0.0: Test execution complete&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

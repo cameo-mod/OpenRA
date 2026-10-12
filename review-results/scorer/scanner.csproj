@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><AssemblyName>OpenRA.Test</AssemblyName><TargetFramework>net10.0</TargetFramework><LangVersion>13</LangVersion><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+<ItemGroup>
+<Compile Include="../../OpenRA.Test/OpenRA.Mods.Common/AttackGarrisonedTest.cs" />
+<Compile Include="../../OpenRA.Test/OpenRA.Mods.Common/WeaponTargetScoreTest.cs" />
+<Reference Include="OpenRA.Game"><HintPath>../../bin/OpenRA.Game.dll</HintPath></Reference>
+<Reference Include="OpenRA.Mods.Common"><HintPath>../../bin/OpenRA.Mods.Common.dll</HintPath></Reference>
+<Reference Include="OpenRA.Mods.AS"><HintPath>../../bin/OpenRA.Mods.AS.dll</HintPath></Reference>
+<Reference Include="Eluant"><HintPath>../../bin/Eluant.dll</HintPath></Reference><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+<PackageReference Include="NUnit" Version="4.3.2" />
+<PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+</ItemGroup></Project>
+
