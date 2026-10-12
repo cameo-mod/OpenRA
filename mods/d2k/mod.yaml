@@ -1,6 +1,6 @@
 Metadata:
 	Title: mod-title
-	Version: {DEV_VERSION}
+	Version: git-6da7fce14da541180c6baddd6925118fbef65b94
 	Website: https://www.openra.net
 	WebIcon32: https://www.openra.net/images/icons/d2k_32x32.png
 	WindowTitle: mod-windowtitle
@@ -37,7 +37,7 @@ FileSystem: ContentInstallerFileSystem
 
 MapFolders:
 	d2k|maps: System
-	~^SupportDir|maps/d2k/{DEV_VERSION}: User
+	~^SupportDir|maps/d2k/git-6da7fce14da541180c6baddd6925118fbef65b94: User
 
 Rules:
 	d2k|rules/misc.yaml

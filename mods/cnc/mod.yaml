@@ -1,6 +1,6 @@
 Metadata:
 	Title: mod-title
-	Version: {DEV_VERSION}
+	Version: git-6da7fce14da541180c6baddd6925118fbef65b94
 	Website: https://www.openra.net
 	WebIcon32: https://www.openra.net/images/icons/cnc_32x32.png
 	WindowTitle: mod-windowtitle
@@ -39,7 +39,7 @@ FileSystem: ContentInstallerFileSystem
 
 MapFolders:
 	cnc|maps: System
-	~^SupportDir|maps/cnc/{DEV_VERSION}: User
+	~^SupportDir|maps/cnc/git-6da7fce14da541180c6baddd6925118fbef65b94: User
 
 Rules:
 	cnc|rules/misc.yaml
