@@ -127,7 +127,8 @@ namespace OpenRA.Test
 				{
 					["host"] = new("host", new SpaceInfo(), body, hostInfo,
 						cargo ? Info<CargoInfo>(("MaxWeight", 8)) : Info<OpenRA.Mods.AS.Traits.GarrisonableInfo>(("MaxWeight", 8)),
-						new RecorderInfo(), new AutoTargetInfo()),
+						new RecorderInfo(), new AutoTargetInfo(),
+						Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Priority", 1))),
 					["rifle"] = Passenger("rifle", "rifle", "Infantry"),
 					["rocket"] = Passenger("rocket", "rocket", "Vehicle"),
 					["infantry"] = new("infantry", new SpaceInfo(), Info<TargetableInfo>(("TargetTypes", new BitSet<TargetableType>("Infantry")))),
@@ -142,6 +143,14 @@ namespace OpenRA.Test
 					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
 					new RecorderInfo(), Info<AutoTargetInfo>(("DynamicWeaponPriority", dynamicPriority)),
 					Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle"))));
+				actors["noauto"] = new ActorInfo("noauto", new SpaceInfo(), body, new AttackFollowInfo(),
+					Info<ArmamentInfo>(("Weapon", "rifle"), ("PauseOnCondition", new BooleanExpression("empty"))),
+					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo());
+				actors["disat"] = new ActorInfo("disat", new SpaceInfo(), body, new AttackFollowInfo(),
+					Info<ArmamentInfo>(("Weapon", "rifle"), ("PauseOnCondition", new BooleanExpression("empty"))),
+					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
+					Info<AutoTargetInfo>(("RequiresCondition", new BooleanExpression("never"))),
+					Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Priority", 1)));
 				var weapons = new Dictionary<string, OpenRA.GameRules.WeaponInfo>
 				{
 					["rifle"] = Info<OpenRA.GameRules.WeaponInfo>(("Range", new WDist(4096)), ("ReloadDelay", 3), ("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Warheads", ImmutableArray.Create<IWarhead>(Info<TargetDamageWarhead>(("Damage", 10))))),
@@ -499,6 +508,58 @@ namespace OpenRA.Test
 			Assert.That(f.Attack.Stations.All(s => s.RequestedTarget.Actor == f.Infantry), Is.True);
 			f.Attack.OnStopOrder(f.Host);
 			Assert.That(f.Attack.Stations.All(s => s.RequestedTarget.Type == TargetType.Invalid && s.OpportunityTarget.Type == TargetType.Invalid), Is.True);
+		}
+		[TestCase(false)]
+		[TestCase(true)]
+		public void OccupantsWithoutUsableAutoTargetFireThroughHostAuthority(bool cargo)
+		{
+			// Passengers whose AutoTarget is absent or disabled keep host-driven coverage,
+			// matching the pre-station host-scanned behaviour.
+			var f = new Fixture(cargo: cargo);
+			var noAuto = f.Create("noauto", f.Own, WPos.Zero);
+			var disabled = f.Create("disat", f.Own, WPos.Zero);
+			f.Enter(noAuto); f.Enter(disabled);
+			f.Tick();
+			f.Tick();
+			Assert.That(f.Attack.Stations.Select(s => s.OpportunityTarget.Actor),
+				Is.EqualTo(new Actor[] { f.Infantry, f.Infantry }));
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2));
+		}
+		[Test]
+		public void FunctionalOccupantAutoTargetBelowDefendStillStaysSilent()
+		{
+			// The occupant-stance contract is deliberate: a usable AutoTarget gates by its own
+			// stance. Only absent or disabled occupant AutoTargets fall back to the host.
+			var f = new Fixture(); f.Enter(f.Rifle);
+			f.Rifle.Trait<AutoTarget>().SetStance(f.Rifle, UnitStance.HoldFire);
+			for (var i = 0; i < 6; i++) f.Tick();
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Type, Is.EqualTo(TargetType.Invalid));
+			Assert.That(f.Recorder.Events, Is.Empty);
+		}
+		[TestCase(false)]
+		[TestCase(true)]
+		public void ExplicitOrderAppliesBeforeActivityTickAndSurvivesPreemption(bool cargo)
+		{
+			// Dual-attack-trait hosts can pre-empt PassengerFirePortAttackActivity before its
+			// first tick; the request must reach stations at order-resolve time regardless.
+			var f = new Fixture(cargo: cargo); f.Enter(f.Rifle);
+			f.Attack.AttackTarget(Target.FromActor(f.Infantry), AttackSource.Default, false, true);
+			Assert.That(f.Attack.Stations[0].RequestedTarget.Actor, Is.SameAs(f.Infantry),
+				"Explicit orders apply to stations at resolve time, not on the activity's first tick");
+			f.Host.CancelActivity();
+			f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(1));
+		}
+		[TestCase(false)]
+		[TestCase(true)]
+		public void ForceAttackTerrainOrderAppliesBeforeActivityTick(bool cargo)
+		{
+			var f = new Fixture(cargo: cargo); f.Enter(f.Rifle);
+			f.Attack.AttackTarget(Target.FromPos(new WPos(1024, 0, 0)), AttackSource.Default, false, true, true);
+			Assert.That(f.Attack.Stations[0].RequestedTarget.Type, Is.EqualTo(TargetType.Terrain));
+			Assert.That(f.Attack.Stations[0].RequestedForce, Is.True);
+			f.Host.CancelActivity();
+			f.Tick();
 		}
 		[Test]
 		public void InvisibleTargetsAreNotRetainedOrForecastAndPassengerStanceIsRespected()
