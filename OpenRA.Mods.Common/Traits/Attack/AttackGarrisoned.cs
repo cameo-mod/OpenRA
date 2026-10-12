@@ -39,6 +39,8 @@ namespace OpenRA.Mods.Common.Traits
 		public readonly int ScanInterval = 5;
 		[Desc("Explicit acknowledgement that occupants exceeding available ports cannot fire.")]
 		public readonly bool NoFireOverflow = false;
+		[Desc("Write per-station gate diagnostics (binding, AT state, eligibility rejections, order route) to debug.log. Dev/testing only.")]
+		public readonly bool LogFireDiagnostics = false;
 		public IReadOnlyList<FirePort> Ports { get; private set; }
 
 		public override object Create(ActorInitializer init) => new AttackGarrisoned(init.Self, this);
@@ -78,6 +80,9 @@ namespace OpenRA.Mods.Common.Traits
 		public Target OpportunityTarget { get; internal set; }
 		internal bool RequestedForce, OpportunityForce, Persistent, Retaliating;
 		internal int ScanTicks;
+		internal string LastDiag;
+		internal string LastScanDiag;
+		internal string LastFireDiag;
 		internal readonly List<AnimationWithOffset> Muzzles = [];
 		public FirePortStation(int index) { PortIndex = index; }
 	}
@@ -88,6 +93,7 @@ namespace OpenRA.Mods.Common.Traits
 		internal Turreted Turret;
 		internal Target Target = Target.Invalid;
 		internal int ScanTicks;
+		internal string LastDiag;
 	}
 
 	/// <summary>Uses AttackBase orders but never AttackFollow's shared opportunity target.</summary>
@@ -105,6 +111,7 @@ namespace OpenRA.Mods.Common.Traits
 		IFirePortOccupantProvider[] occupantProviders;
 		BodyOrientation coords;
 		PassengerFirePortAttackActivity activeActivity;
+		string lastRequestSignature;
 		public IReadOnlyList<FirePortStation> Stations => stations;
 
 		public AttackGarrisoned(Actor self, AttackGarrisonedInfo info) : base(self, info)
@@ -191,10 +198,13 @@ namespace OpenRA.Mods.Common.Traits
 				station.RequestedTarget = activeActivity.CurrentTarget;
 				station.RequestedForce = activeActivity.ForceAttack;
 			}
+			if (Info.LogFireDiagnostics)
+				DiagRaw($"bind port{station.PortIndex} occupant={actor.Info.Name}#{actor.ActorID} arms={station.Arms.Length}({string.Join("+", station.Arms.Select(a => a.Info.Name))}) occAT={OccATState(station)} effAT={EffATKind(station)} roster:cargo={cargoContainers.Sum(c => c.Passengers.Count())},provider={occupantProviders.Sum(p => p.Occupants.Count())} activity={host.CurrentActivity?.GetType().Name ?? "none"}");
 		}
 
 		void Exit(FirePortStation station)
 		{
+			DiagRaw($"unbind port{station.PortIndex} occupant={station.Occupant?.Info.Name}#{station.Occupant?.ActorID}");
 			foreach (var arm in station.Arms)
 				arm.RemoveNotifyAttacks(notifyAttacks);
 			station.Occupant = null;
@@ -315,21 +325,60 @@ namespace OpenRA.Mods.Common.Traits
 				target = target.Recalculate(host.Owner, out _);
 			return Valid(target) ? target : Target.Invalid;
 		}
-		IEnumerable<Armament> Eligible(FirePortStation station, Target target, bool force, bool checkRange, bool checkCone = true, bool includePaused = false)
+		IEnumerable<Armament> Eligible(FirePortStation station, Target target, bool force, bool checkRange, bool checkCone = true, bool includePaused = false, Action<string> reject = null)
 		{
-			if (!host.IsInWorld || host.IsDead || host.WillDispose || station.Occupant == null || station.Occupant.IsDead
-				|| !Valid(target) || checkCone && !InCone(station, target))
+			if (!host.IsInWorld || host.IsDead || host.WillDispose || station.Occupant == null || station.Occupant.IsDead)
+			{
+				reject?.Invoke("host-or-occupant-unavailable");
 				yield break;
+			}
+			if (!Valid(target))
+			{
+				reject?.Invoke("invalid-target");
+				yield break;
+			}
+			if (checkCone && !InCone(station, target))
+			{
+				reject?.Invoke("outside-port-cone");
+				yield break;
+			}
 			if (!force && (target.RequiresForceFire || target.Type == TargetType.Terrain && !Info.TargetTerrainWithoutForceFire))
+			{
+				reject?.Invoke("requires-force-fire");
 				yield break;
+			}
 			var owner = target.Type == TargetType.Actor ? target.Actor.Owner : target.FrozenActor?.Owner;
 			var position = host.CenterPosition + Offset(station);
 			foreach (var arm in station.Arms)
-				if (!arm.IsTraitDisabled && (includePaused || !arm.IsTraitPaused) && arm.Weapon.IsValidAgainst(target, host.World, host)
-					&& (owner == null || (force ? arm.Info.ForceTargetRelationships : arm.Info.TargetRelationships).HasRelationship(host.Owner.RelationshipWith(owner)))
-					&& (!checkRange || target.IsInRange(position, arm.MaxRange())
-						&& (arm.Weapon.MinRange == WDist.Zero || !target.IsInRange(position, arm.Weapon.MinRange))))
-					yield return arm;
+			{
+				if (arm.IsTraitDisabled)
+				{
+					reject?.Invoke(arm.Info.Name + ":disabled");
+					continue;
+				}
+				if (!includePaused && arm.IsTraitPaused)
+				{
+					reject?.Invoke(arm.Info.Name + ":paused");
+					continue;
+				}
+				if (!arm.Weapon.IsValidAgainst(target, host.World, host))
+				{
+					reject?.Invoke(arm.Info.Name + ":weapon-invalid");
+					continue;
+				}
+				if (owner != null && !(force ? arm.Info.ForceTargetRelationships : arm.Info.TargetRelationships).HasRelationship(host.Owner.RelationshipWith(owner)))
+				{
+					reject?.Invoke(arm.Info.Name + ":relationship");
+					continue;
+				}
+				if (checkRange && (!target.IsInRange(position, arm.MaxRange())
+					|| arm.Weapon.MinRange != WDist.Zero && target.IsInRange(position, arm.Weapon.MinRange)))
+				{
+					reject?.Invoke(arm.Info.Name + ":range");
+					continue;
+				}
+				yield return arm;
+			}
 		}
 		public bool CanFireFromPort(int port, in Target target) => !IsTraitDisabled && !IsTraitPaused
 			&& port >= 0 && port < stations.Length && Eligible(stations[port], target, false, true).Any();
@@ -362,32 +411,104 @@ namespace OpenRA.Mods.Common.Traits
 			var t = target;
 			return IsTraitDisabled || IsTraitPaused ? [] : stations.SelectMany(s => Eligible(s, t, false, true));
 		}
+		/// <summary>The AutoTarget that may drive this station at a given stance threshold.
+		/// A functional occupant AutoTarget keeps per-passenger targeting; an absent or
+		/// disabled occupant AutoTarget falls back to the host's so occupants retain
+		/// host-driven coverage. Occupant stance always gates when the trait can run.</summary>
+		AutoTarget EffectiveAutoTarget(FirePortStation station, UnitStance minStance)
+		{
+			var at = station.AutoTarget;
+			if (at == null || at.IsTraitDisabled)
+				at = host.TraitOrDefault<AutoTarget>();
+			return at != null && !at.IsTraitDisabled && at.Stance >= minStance ? at : null;
+		}
+		string OccATState(FirePortStation station) =>
+			station.AutoTarget == null ? "none" : station.AutoTarget.IsTraitDisabled ? "disabled" : station.AutoTarget.Stance.ToString();
+		string HostATState()
+		{
+			var hostAT = host.TraitOrDefault<AutoTarget>();
+			return hostAT == null ? "none" : hostAT.IsTraitDisabled ? "disabled" : hostAT.Stance.ToString();
+		}
+		string EffATKind(FirePortStation station)
+		{
+			var occ = station.AutoTarget;
+			if (occ != null && !occ.IsTraitDisabled)
+				return "occupant:" + occ.Stance;
+			return "host:" + HostATState();
+		}
+		void Diag(FirePortStation station, string state)
+		{
+			if (!Info.LogFireDiagnostics || station.LastDiag == state)
+				return;
+			station.LastDiag = state;
+			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex}: {state}");
+		}
+		void DiagScan(FirePortStation station, string state)
+		{
+			if (!Info.LogFireDiagnostics || station.LastScanDiag == state)
+				return;
+			station.LastScanDiag = state;
+			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex} scan: {state}");
+		}
+		void DiagFire(FirePortStation station, string state)
+		{
+			if (!Info.LogFireDiagnostics || station.LastFireDiag == state)
+				return;
+			station.LastFireDiag = state;
+			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex} fire: {state}");
+		}
+		void DiagRaw(string message)
+		{
+			if (Info.LogFireDiagnostics)
+				TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID}: {message}");
+		}
+		internal void DiagActivity(string message) => DiagRaw(message);
+		void DiagGroup(PassengerWeaponStation group, FirePortStation station, string state)
+		{
+			if (!Info.LogFireDiagnostics || group.LastDiag == state)
+				return;
+			group.LastDiag = state;
+			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex} group: {state}");
+		}
 		Target Scan(FirePortStation station)
 		{
 			var hostTarget = host.TraitOrDefault<AutoTarget>();
 			if (!host.IsInWorld || host.IsDead || host.WillDispose || IsTraitDisabled || IsTraitPaused
 				|| hostTarget?.IsTraitDisabled == true || hostTarget?.Stance < UnitStance.Defend)
+			{
+				DiagScan(station, "host-gate");
 				return Target.Invalid;
-			return station.AutoTarget?.ScanForTarget(host, station.Arms,
+			}
+			var eff = EffectiveAutoTarget(station, UnitStance.Defend);
+			if (eff == null)
+			{
+				DiagScan(station, $"no-effective-at occAT={OccATState(station)}");
+				return Target.Invalid;
+			}
+			var result = eff.ScanForTarget(host, station.Arms,
 				t => Eligible(station, t, false, true).Any(), Info.TargetFrozenActors, new WDist(Offset(station).Length),
-				(a, t) => Eligible(station, t, false, true).Contains(a)) ?? Target.Invalid;
+				(a, t) => Eligible(station, t, false, true).Contains(a));
+			DiagScan(station, result.Type == TargetType.Invalid
+				? $"empty occAT={OccATState(station)} eff={EffATKind(station)}"
+				: $"hit {result.Type} occAT={OccATState(station)} eff={EffATKind(station)}");
+			return result;
 		}
 		bool MayRetainOpportunity(FirePortStation station, Target target)
 		{
 			if (station.Persistent)
 				return true;
 			var hostTarget = host.TraitOrDefault<AutoTarget>();
-			if (!Info.OpportunityFire || station.AutoTarget == null || station.AutoTarget.IsTraitDisabled
-				|| hostTarget?.IsTraitDisabled == true || hostTarget?.Stance < UnitStance.ReturnFire
-				|| station.AutoTarget.Stance < UnitStance.ReturnFire)
+			var autoTarget = EffectiveAutoTarget(station, UnitStance.ReturnFire);
+			if (!Info.OpportunityFire || autoTarget == null
+				|| hostTarget?.IsTraitDisabled == true || hostTarget?.Stance < UnitStance.ReturnFire)
 				return false;
 			if (station.Retaliating)
 				return true;
 			if (hostTarget?.Stance < UnitStance.Defend || !Valid(target))
 				return false;
 			return target.Type == TargetType.Actor
-				? station.AutoTarget.HasValidTargetPriority(host, target.Actor.Owner, target.Actor.GetEnabledTargetTypes())
-				: target.Type == TargetType.FrozenActor && station.AutoTarget.HasValidTargetPriority(host, target.FrozenActor.Owner, target.FrozenActor.TargetTypes);
+				? autoTarget.HasValidTargetPriority(host, target.Actor.Owner, target.Actor.GetEnabledTargetTypes())
+				: target.Type == TargetType.FrozenActor && autoTarget.HasValidTargetPriority(host, target.FrozenActor.Owner, target.FrozenActor.TargetTypes);
 		}
 		public IReadOnlyList<Target> ForecastTargets() => stations.Select(s => s.Occupant == null ? Target.Invalid : Scan(s)).ToArray();
 		public override IEnumerable<Armament> ChooseArmamentsForTarget(Target target, bool forceAttack)
@@ -420,21 +541,30 @@ namespace OpenRA.Mods.Common.Traits
 			return ChooseArmamentsForTarget(target, true).Select(a => a.Weapon.MinRange).DefaultIfEmpty(WDist.Zero).Min();
 		}
 
-		internal void Request(PassengerFirePortAttackActivity activity, Target target, bool force)
+		internal void Request(PassengerFirePortAttackActivity activity, Target target, bool force, string via = "activity-tick")
 		{
 			activeActivity = activity;
+			var requested = 0;
 			foreach (var station in stations)
 				if (station.Occupant != null)
 				{
 					station.RequestedTarget = target;
 					station.RequestedForce = force;
+					requested++;
 				}
+			var signature = via + "|" + target.Type + "|" + force;
+			if (lastRequestSignature != signature)
+			{
+				lastRequestSignature = signature;
+				DiagRaw($"request via={via} target={target.Type}{(target.Type == TargetType.Actor ? ":" + target.Actor.Info.Name : "")} force={force} stations={requested} currentActivity={host.CurrentActivity?.GetType().Name ?? "none"}");
+			}
 		}
 		internal void Release(PassengerFirePortAttackActivity activity)
 		{
 			if (activeActivity != activity)
 				return;
 			activeActivity = null;
+			DiagRaw($"release persistent={Info.PersistentTargeting} activity-ended");
 			foreach (var station in stations)
 			{
 				if (Info.PersistentTargeting && Valid(station.RequestedTarget))
@@ -450,6 +580,14 @@ namespace OpenRA.Mods.Common.Traits
 		}
 		public override Activity GetAttackActivity(Actor self, AttackSource source, in Target target, bool allowMove, bool forceAttack, Color? targetLineColor = null) =>
 			new PassengerFirePortAttackActivity(self, this, target, allowMove, forceAttack, targetLineColor);
+		public override void OnResolveAttackOrder(Actor self, Activity activity, in Target target, bool queued, bool forceAttack)
+		{
+			// A competing attack trait may pre-empt the queued activity before it can tick;
+			// deliver the request to stations immediately so explicit orders never vanish.
+			// Queued orders wait for the activity so they apply in order.
+			if (!queued && activity is PassengerFirePortAttackActivity passengerActivity)
+				Request(passengerActivity, target, forceAttack, "order-resolve");
+		}
 		public override void DoAttack(Actor self, in Target target) { /* Stations fire during their own synchronized tick. */ }
 		public override void OnStopOrder(Actor self)
 		{
@@ -491,14 +629,15 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 			var target = Target.FromActor(info.Attacker);
 			foreach (var station in stations)
-				if (station.RequestedTarget.Type == TargetType.Invalid && station.AutoTarget != null
-					&& !station.AutoTarget.IsTraitDisabled && station.AutoTarget.Stance >= UnitStance.ReturnFire
+				if (station.RequestedTarget.Type == TargetType.Invalid
+					&& EffectiveAutoTarget(station, UnitStance.ReturnFire) != null
 					&& Eligible(station, target, false, true).Any())
 				{
 					var preferred = Scan(station);
 					station.OpportunityTarget = preferred.Type != TargetType.Invalid ? preferred : target;
 					station.OpportunityForce = station.Persistent = false;
 					station.Retaliating = preferred.Type == TargetType.Invalid;
+					DiagRaw($"retaliate port{station.PortIndex} attacker={info.Attacker.Info.Name}");
 				}
 		}
 
@@ -526,7 +665,7 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					target = RefreshTarget(station.OpportunityTarget);
 					force = station.OpportunityForce;
-					var rescan = station.AutoTarget?.Info.DynamicWeaponPriority == true && !station.Persistent && !station.Retaliating
+					var rescan = EffectiveAutoTarget(station, UnitStance.Defend)?.Info.DynamicWeaponPriority == true && !station.Persistent && !station.Retaliating
 						&& --station.ScanTicks <= 0;
 					if (rescan || !MayRetainOpportunity(station, target) || !Eligible(station, target, force, true).Any())
 					{
@@ -545,7 +684,12 @@ namespace OpenRA.Mods.Common.Traits
 					FireWeaponStations(station);
 					continue;
 				}
-				var arms = Eligible(station, target, force, true).ToArray();
+				var rejects = Info.LogFireDiagnostics ? new List<string>() : null;
+				var arms = Eligible(station, target, force, true, reject: rejects == null ? (Action<string>)null : rejects.Add).ToArray();
+				if (Info.LogFireDiagnostics)
+					Diag(station, arms.Length > 0
+						? $"{(hasRequest ? "ordered" : "opp")}:{target.Type} arms={arms.Length}"
+						: $"{(hasRequest ? "ordered" : "opp")}-silent:{rejects.FirstOrDefault() ?? "none"} occAT={OccATState(station)} effAT={EffATKind(station)} hostAT={HostATState()}");
 				if (arms.Length == 0)
 					continue;
 				IsAiming = true;
@@ -561,7 +705,13 @@ namespace OpenRA.Mods.Common.Traits
 		}
 		void FireArm(FirePortStation station, Armament arm, Target target, WAngle yaw)
 		{
-			if (!arm.CheckFire(station.Occupant, station.Facing, target) || arm.Info.MuzzleSequence == null || station.Render == null)
+			if (!arm.CheckFire(station.Occupant, station.Facing, target))
+			{
+				DiagFire(station, $"checkfire-false arm={arm.Info.Name} delay={arm.FireDelay} burst={arm.Burst} paused={arm.IsTraitPaused} disabled={arm.IsTraitDisabled}");
+				return;
+			}
+			DiagFire(station, $"fired arm={arm.Info.Name}");
+			if (arm.Info.MuzzleSequence == null || station.Render == null)
 				return;
 			var animation = new Animation(host.World, station.Render.GetImage(station.Occupant), () => yaw);
 			var muzzle = new AnimationWithOffset(animation, () => Offset(station), () => false,
@@ -589,15 +739,18 @@ namespace OpenRA.Mods.Common.Traits
 					{
 						force = false;
 						var hostAuto = host.TraitOrDefault<AutoTarget>();
+						var autoTarget = EffectiveAutoTarget(station, UnitStance.Defend);
 						var mayScan = Info.OpportunityFire && hostAuto?.IsTraitDisabled != true
-							&& !(hostAuto?.Stance < UnitStance.Defend) && station.AutoTarget != null
-							&& !station.AutoTarget.IsTraitDisabled && station.AutoTarget.Stance >= UnitStance.Defend;
+							&& !(hostAuto?.Stance < UnitStance.Defend) && autoTarget != null;
 						if (!mayScan)
+						{
 							group.Target = Target.Invalid;
+							DiagGroup(group, station, $"mayScan-false occAT={OccATState(station)} effAT={EffATKind(station)} hostAT={(hostAuto == null ? "none" : hostAuto.IsTraitDisabled ? "disabled" : hostAuto.Stance.ToString())}");
+						}
 						else if (--group.ScanTicks <= 0 || !EligibleGroup(group.Target, false))
 						{
 							group.ScanTicks = Info.ScanInterval;
-							group.Target = station.AutoTarget.ScanForTarget(host, group.Arms, t => EligibleGroup(t, false),
+							group.Target = autoTarget.ScanForTarget(host, group.Arms, t => EligibleGroup(t, false),
 									Info.TargetFrozenActors, new WDist(Offset(station).Length),
 									(a, t) => Eligible(station, t, false, true).Contains(a)) ;
 						}
@@ -606,6 +759,7 @@ namespace OpenRA.Mods.Common.Traits
 				}
 				group.Target = target;
 				var arms = Eligible(station, target, force, true).Where(group.Arms.Contains).ToArray();
+				DiagGroup(group, station, $"target={target.Type} arms={arms.Length}");
 				if (arms.Length == 0)
 					continue;
 				IsAiming = true;
@@ -633,6 +787,7 @@ namespace OpenRA.Mods.Common.Traits
 		readonly IMove move;
 		readonly Color? lineColor;
 		readonly Player owner;
+		bool firstTick = true;
 		public Target CurrentTarget { get; private set; }
 		public bool ForceAttack { get; }
 		public PassengerFirePortAttackActivity(Actor self, AttackGarrisoned attack, Target target, bool allowMove, bool force, Color? color)
@@ -652,6 +807,11 @@ namespace OpenRA.Mods.Common.Traits
 				return true;
 			if (attack.IsTraitPaused)
 				return false;
+			if (firstTick)
+			{
+				firstTick = false;
+				attack.DiagActivity($"passenger-activity first-tick target={CurrentTarget.Type} force={ForceAttack}");
+			}
 			CurrentTarget = attack.RefreshTarget(CurrentTarget);
 			if (CurrentTarget.Type == TargetType.Invalid)
 				return true;
@@ -673,7 +833,11 @@ namespace OpenRA.Mods.Common.Traits
 				QueueChild(move.MoveWithinRange(CurrentTarget, arms.Select(a => a.Weapon.MinRange).Min(), max));
 			return false;
 		}
-		protected override void OnLastRun(Actor self) => attack.Release(this);
+		protected override void OnLastRun(Actor self)
+		{
+			attack.DiagActivity($"passenger-activity ended canceled={IsCanceling} ran={!firstTick}");
+			attack.Release(this);
+		}
 		public override IEnumerable<TargetLineNode> TargetLineNodes(Actor self)
 		{
 			if (lineColor != null)
