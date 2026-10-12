@@ -1,0 +1,13 @@
+﻿from pathlib import Path
+p=Path('OpenRA.Mods.Common/Traits/Attack/AttackGarrisoned.cs')
+s=p.read_text(encoding='utf-8-sig').replace('using OpenRA.Mods.Common;\n','').replace('using OpenRA.Mods.Common.Traits;\n','')
+p.write_text(s,encoding='utf-8',newline='\n')
+p=Path('OpenRA.Test/OpenRA.Mods.Common/AttackGarrisonedTest.cs')
+s=p.read_text(encoding='utf-8-sig')
+a=s.index('\t\tsealed class ProviderInfo'); b=s.index('\t\tsealed class RecorderInfo',a)
+s=s[:a]+s[b:]; s=s.replace('new ProviderInfo(), new RecorderInfo(), new AutoTargetInfo()', 'new RecorderInfo(), new AutoTargetInfo()')
+p.write_text(s,encoding='utf-8',newline='\n')
+p=Path('OpenRA.Mods.Common/Traits/Attack/IndependentFirePorts.cs')
+s=p.read_text(encoding='utf-8-sig').replace('\t\tIEnumerable<Actor> Occupants', '\t\t/// <summary>Current container occupants in stable container order.</summary>\n\t\tIEnumerable<Actor> Occupants').replace('\tpublic interface INotifyFirePortOccupantEntered', '\t/// <summary>Entry notification forwarded by an external occupant provider.</summary>\n\tpublic interface INotifyFirePortOccupantEntered').replace('\tpublic interface INotifyFirePortOccupantExited', '\t/// <summary>Exit notification forwarded by an external occupant provider.</summary>\n\tpublic interface INotifyFirePortOccupantExited')
+s=s.replace('\t\tbool CanFireFromPort', '\t\t/// <summary>Tests one occupied port at its actual offset, cone and weapon range.</summary>\n\t\tbool CanFireFromPort').replace('\t\tbool CanFireFromAnyPort','\t\t/// <summary>True when at least one current station can fire normally.</summary>\n\t\tbool CanFireFromAnyPort').replace('\t\tIEnumerable<Armament> ArmamentsAgainst','\t\t/// <summary>Eligible station weapons, in increasing port order.</summary>\n\t\tIEnumerable<Armament> ArmamentsAgainst').replace('\t\tIReadOnlyList<Target> ForecastTargets','\t\t/// <summary>Read-only independent priority forecast, one target per port.</summary>\n\t\tIReadOnlyList<Target> ForecastTargets')
+p.write_text(s,encoding='utf-8',newline='\n')
