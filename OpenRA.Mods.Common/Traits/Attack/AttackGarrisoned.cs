@@ -78,7 +78,8 @@ namespace OpenRA.Mods.Common.Traits
 		internal RenderSprites Render;
 		public Target RequestedTarget { get; internal set; }
 		public Target OpportunityTarget { get; internal set; }
-		internal bool RequestedForce, OpportunityForce, Persistent, Retaliating;
+		public bool RequestedForce { get; internal set; }
+		internal bool OpportunityForce, Persistent, Retaliating;
 		internal int ScanTicks;
 		internal string LastDiag;
 		internal string LastScanDiag;
@@ -111,6 +112,7 @@ namespace OpenRA.Mods.Common.Traits
 		IFirePortOccupantProvider[] occupantProviders;
 		BodyOrientation coords;
 		PassengerFirePortAttackActivity activeActivity;
+		bool pendingRequestClear;
 		string lastRequestSignature;
 		public IReadOnlyList<FirePortStation> Stations => stations;
 
@@ -134,6 +136,7 @@ namespace OpenRA.Mods.Common.Traits
 						hash = hash * 31 + Sync.HashTarget(activeActivity.CurrentTarget);
 						hash = hash * 31 + (activeActivity.ForceAttack ? 1 : 0);
 					}
+					hash = hash * 31 + (pendingRequestClear ? 1 : 0);
 					foreach (var port in stations)
 					{
 						hash = hash * 31 + port.PortIndex;
@@ -564,10 +567,12 @@ namespace OpenRA.Mods.Common.Traits
 			if (activeActivity != activity)
 				return;
 			activeActivity = null;
-			DiagRaw($"release persistent={Info.PersistentTargeting} activity-ended");
+			var suppressPersistence = pendingRequestClear;
+			pendingRequestClear = false;
+			DiagRaw($"release persistent={Info.PersistentTargeting} suppress={suppressPersistence} activity-ended");
 			foreach (var station in stations)
 			{
-				if (Info.PersistentTargeting && Valid(station.RequestedTarget))
+				if (!suppressPersistence && Info.PersistentTargeting && Valid(station.RequestedTarget))
 				{
 					station.OpportunityTarget = station.RequestedTarget;
 					station.OpportunityForce = station.RequestedForce;
@@ -585,19 +590,50 @@ namespace OpenRA.Mods.Common.Traits
 			// A competing attack trait may pre-empt the queued activity before it can tick;
 			// deliver the request to stations immediately so explicit orders never vanish.
 			// Queued orders wait for the activity so they apply in order.
-			if (!queued && activity is PassengerFirePortAttackActivity passengerActivity)
-				Request(passengerActivity, target, forceAttack, "order-resolve");
+			if (!queued)
+			{
+				pendingRequestClear = false;
+				if (activity is PassengerFirePortAttackActivity passengerActivity)
+					Request(passengerActivity, target, forceAttack, "order-resolve");
+			}
 		}
 		public override void DoAttack(Actor self, in Target target) { /* Stations fire during their own synchronized tick. */ }
 		public override void OnStopOrder(Actor self)
 		{
+			pendingRequestClear = false;
 			activeActivity = null;
 			foreach (var station in stations)
 				Clear(station);
 			base.OnStopOrder(self);
 		}
+		public override void OnNonAttackOrder(Actor self, Order order)
+		{
+			if (order.Queued)
+			{
+				// Queued commands only take effect once the current activity ends, so
+				// the request stays; Release suppresses the persistence handoff instead.
+				if (activeActivity != null)
+					pendingRequestClear = true;
+				return;
+			}
+
+			pendingRequestClear = false;
+			activeActivity = null;
+			DiagRaw($"order-clear order={order.OrderString}");
+			foreach (var station in stations)
+			{
+				station.RequestedTarget = Target.Invalid;
+				station.RequestedForce = false;
+				if (station.Persistent)
+				{
+					station.OpportunityTarget = Target.Invalid;
+					station.OpportunityForce = station.Persistent = false;
+				}
+			}
+		}
 		void INotifyOwnerChanged.OnOwnerChanged(Actor self, Player oldOwner, Player newOwner)
 		{
+			pendingRequestClear = false;
 			activeActivity = null;
 			foreach (var station in stations)
 				Clear(station);

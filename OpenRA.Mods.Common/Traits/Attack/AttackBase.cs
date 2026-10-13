@@ -211,6 +211,8 @@ namespace OpenRA.Mods.Common.Traits
 			}
 			else if (order.OrderString == "Stop")
 				OnStopOrder(self);
+			else
+				OnNonAttackOrder(self, order);
 		}
 
 		// Some 3rd-party mods rely on this being public
@@ -224,6 +226,11 @@ namespace OpenRA.Mods.Common.Traits
 
 			self.CancelActivity();
 		}
+
+		// The issuing trait cancels the attack activity for non-attack orders (Move,
+		// EnterGarrison, ...) through the activity queue; subclasses override this to
+		// drop order-derived state that would otherwise be left behind.
+		public virtual void OnNonAttackOrder(Actor self, Order order) { }
 
 		string IOrderVoice.VoicePhraseForOrder(Actor self, Order order)
 		{
