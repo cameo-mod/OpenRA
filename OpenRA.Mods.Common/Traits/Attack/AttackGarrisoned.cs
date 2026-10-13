@@ -610,9 +610,19 @@ namespace OpenRA.Mods.Common.Traits
 					continue;
 				IsAiming = true;
 				// TakeCover uses Turreted for prone muzzle offsets, not independent aiming.
-				// Its FaceTarget has no AttackTurreted driver; aim these arms with the body.
+				// Without a matching AttackTurreted driver, aim these arms with the body.
 				// Real turrets retain their facing, disabled and paused gates.
-				var aimingTurret = group.Turret is TakeCover ? null : group.Turret;
+				var aimingTurret = group.Turret;
+				if (aimingTurret is TakeCover)
+				{
+					if (aimingTurret.IsTraitDisabled || aimingTurret.IsTraitPaused)
+						continue;
+
+					// A TakeCover can also have a real driver: preserve that driver's gates.
+					if (!occupant.TraitsImplementing<AttackTurreted>().Any(at =>
+						((AttackTurretedInfo)at.Info).Turrets.Contains(aimingTurret.Name)))
+						aimingTurret = null;
+				}
 				if (aimingTurret != null)
 				{
 					if (!aimingTurret.FaceTarget(occupant, target))

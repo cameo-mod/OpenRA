@@ -91,7 +91,7 @@ namespace OpenRA.Test
 			public readonly Actor Host, Rifle, Rocket, Infantry, Tank;
 			public readonly AttackGarrisoned Attack;
 			public readonly Recorder Recorder;
-			public Fixture(WVec[] offsets = null, WAngle[] cones = null, WAngle[] yaws = null, bool cargo = false, AttackGarrisonedInfo schema = null, int rifleMinRange = 0, bool dynamicPriority = false, bool takeCover = false)
+			public Fixture(WVec[] offsets = null, WAngle[] cones = null, WAngle[] yaws = null, bool cargo = false, AttackGarrisonedInfo schema = null, int rifleMinRange = 0, bool dynamicPriority = false, bool takeCover = false, string takeCoverDriver = null)
 			{
 				Log.AddChannel("debug", null);
 				Own = Player("own", "enemy"); Enemy = Player("enemy", "own");
@@ -110,7 +110,17 @@ namespace OpenRA.Test
 						Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Priority", 1)),
 					};
 					if (takeCover)
-						traits.Add(Info<TakeCoverInfo>(("Duration", -1)));
+						traits.Add(Info<TakeCoverInfo>(("Duration", -1),
+							("PauseOnCondition", new BooleanExpression("cover-paused")),
+							("RequiresCondition", new BooleanExpression("!cover-disabled"))));
+					if (takeCoverDriver != null)
+					{
+						traits.Add(Info<AttackTurretedInfo>(("Turrets", ImmutableArray.Create(takeCoverDriver)),
+							("RequiresCondition", new BooleanExpression("!driver-disabled")),
+							("PauseOnCondition", new BooleanExpression("driver-paused"))));
+						if (takeCoverDriver != "primary")
+							traits.Add(Info<TurretedInfo>(("Turret", takeCoverDriver)));
+					}
 					return new ActorInfo(name, traits.ToArray());
 				}
 				var actors = new Dictionary<string, ActorInfo>
@@ -295,6 +305,65 @@ namespace OpenRA.Test
 
 			for (var i = 0; i < 8; i++) f.Tick();
 			Assert.That(f.Recorder.Events.Count, Is.GreaterThan(2), "TakeCover must not impose a one-burst limit.");
+		}
+
+		[TestCase(false, "cover-paused")]
+		[TestCase(true, "cover-paused")]
+		[TestCase(false, "cover-disabled")]
+		[TestCase(true, "cover-disabled")]
+		public void TakeCoverBodyAimPreservesPauseAndDisable(bool cargo, string condition)
+		{
+			var f = new Fixture(cargo: cargo, takeCover: true);
+			f.Enter(f.Rifle);
+			var token = f.Rifle.GrantCondition(condition);
+			Assert.That(condition == "cover-paused" ? f.Rifle.Trait<TakeCover>().IsTraitPaused
+				: f.Rifle.Trait<TakeCover>().IsTraitDisabled, Is.True);
+			for (var i = 0; i < 6; i++) f.Tick();
+			Assert.That(f.Recorder.Events, Is.Empty);
+			f.Rifle.RevokeCondition(token);
+			f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(1));
+		}
+
+		[TestCase(false, "primary", "driver-disabled")]
+		[TestCase(true, "primary", "driver-disabled")]
+		[TestCase(false, "deploy", "driver-disabled")]
+		[TestCase(true, "deploy", "driver-disabled")]
+		[TestCase(false, "primary", "driver-paused")]
+		[TestCase(true, "primary", "driver-paused")]
+		[TestCase(false, "deploy", "driver-paused")]
+		[TestCase(true, "deploy", "driver-paused")]
+		public void TakeCoverBodyAimOnlyFallsBackWithoutAMatchingDriver(bool cargo, string driver, string condition)
+		{
+			var f = new Fixture(cargo: cargo, takeCover: true, takeCoverDriver: driver);
+			f.Enter(f.Rifle);
+			Assert.That(f.Rifle.Trait<Armament>().Turret, Is.TypeOf<TakeCover>());
+			var token = f.Rifle.GrantCondition(condition);
+			Assert.That(condition == "driver-paused" ? f.Rifle.Trait<AttackTurreted>().IsTraitPaused
+				: f.Rifle.Trait<AttackTurreted>().IsTraitDisabled, Is.True);
+			for (var i = 0; i < 6; i++) f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(driver == "primary" ? 0 : 2));
+			f.Rifle.RevokeCondition(token);
+			for (var i = 0; i < 4; i++) f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.GreaterThan(driver == "primary" ? 0 : 2));
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		public void EnabledMatchingTakeCoverDriverAimsTheTurretWithoutTurningTheBody(bool cargo)
+		{
+			var f = new Fixture(cargo: cargo, takeCover: true, takeCoverDriver: "primary");
+			f.Infantry.Trait<Space>().SetCenterPosition(f.Infantry, new WPos(2048, 2048, 0));
+			f.Enter(f.Rifle);
+			var bodyFacing = f.Rifle.Trait<IFacing>().Facing;
+			var turret = f.Rifle.Trait<TakeCover>();
+			var turretFacing = turret.LocalOrientation.Yaw;
+			Assert.That(f.Rifle.Trait<AttackTurreted>().IsTraitDisabled, Is.False);
+			Assert.That(f.Rifle.Trait<AttackTurreted>().IsTraitPaused, Is.False);
+			f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(1));
+			Assert.That(f.Rifle.Trait<IFacing>().Facing, Is.EqualTo(bodyFacing));
+			Assert.That(turret.LocalOrientation.Yaw, Is.Not.EqualTo(turretFacing));
 		}
 
 		[TestCase(false)]
