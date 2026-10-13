@@ -264,9 +264,15 @@ namespace OpenRA.Mods.Common.Traits
 			}
 		}
 
+		/// <summary>True while this turret can be aimed by an enabled AttackTurreted driver.
+		/// Callers with a fixed fire direction (e.g. garrison fire ports) must not wait for a turret
+		/// that can never turn.</summary>
+		public bool CanBeDriven =>
+			!IsTraitDisabled && !IsTraitPaused && attack != null && !attack.IsTraitDisabled && !attack.IsTraitPaused;
+
 		public bool FaceTarget(Actor self, in Target target)
 		{
-			if (IsTraitDisabled || IsTraitPaused || attack == null || attack.IsTraitDisabled || attack.IsTraitPaused)
+			if (!CanBeDriven)
 				return false;
 
 			if (target.Type == TargetType.Invalid)

@@ -441,26 +441,36 @@ namespace OpenRA.Mods.Common.Traits
 			if (!Info.LogFireDiagnostics || station.LastDiag == state)
 				return;
 			station.LastDiag = state;
-			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex}: {state}");
+			var text = $"{host.Info.Name}#{host.ActorID} port{station.PortIndex}: {state}";
+			Log.Write("debug", text);
+			TextNotificationsManager.Debug(text);
 		}
 		void DiagScan(FirePortStation station, string state)
 		{
 			if (!Info.LogFireDiagnostics || station.LastScanDiag == state)
 				return;
 			station.LastScanDiag = state;
-			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex} scan: {state}");
+			var text = $"{host.Info.Name}#{host.ActorID} port{station.PortIndex} scan: {state}";
+			Log.Write("debug", text);
+			TextNotificationsManager.Debug(text);
 		}
 		void DiagFire(FirePortStation station, string state)
 		{
 			if (!Info.LogFireDiagnostics || station.LastFireDiag == state)
 				return;
 			station.LastFireDiag = state;
-			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex} fire: {state}");
+			var text = $"{host.Info.Name}#{host.ActorID} port{station.PortIndex} fire: {state}";
+			Log.Write("debug", text);
+			TextNotificationsManager.Debug(text);
 		}
 		void DiagRaw(string message)
 		{
 			if (Info.LogFireDiagnostics)
-				TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID}: {message}");
+			{
+				var text = $"{host.Info.Name}#{host.ActorID}: {message}";
+				Log.Write("debug", text);
+				TextNotificationsManager.Debug(text);
+			}
 		}
 		internal void DiagActivity(string message) => DiagRaw(message);
 		void DiagGroup(PassengerWeaponStation group, FirePortStation station, string state)
@@ -468,7 +478,9 @@ namespace OpenRA.Mods.Common.Traits
 			if (!Info.LogFireDiagnostics || group.LastDiag == state)
 				return;
 			group.LastDiag = state;
-			TextNotificationsManager.Debug($"{host.Info.Name}#{host.ActorID} port{station.PortIndex} group: {state}");
+			var text = $"{host.Info.Name}#{host.ActorID} port{station.PortIndex} group: {state}";
+			Log.Write("debug", text);
+			TextNotificationsManager.Debug(text);
 		}
 		Target Scan(FirePortStation station)
 		{
@@ -763,15 +775,14 @@ namespace OpenRA.Mods.Common.Traits
 				if (arms.Length == 0)
 					continue;
 				IsAiming = true;
-				if (group.Turret != null)
-				{
-					if (!group.Turret.FaceTarget(occupant, target))
-						continue;
-				}
-				else if (station.Facing != null)
+				var drivesTurret = group.Turret != null && group.Turret.CanBeDriven;
+				if (drivesTurret && !group.Turret.FaceTarget(occupant, target))
+					continue;
+				else if (!drivesTurret && station.Facing != null)
 					station.Facing.Facing = (target.CenterPosition - position).Yaw;
+				var fireYaw = drivesTurret ? group.Turret.WorldOrientation.Yaw : (target.CenterPosition - position).Yaw;
 				foreach (var arm in arms)
-					FireArm(station, arm, target, group.Turret?.WorldOrientation.Yaw ?? (target.CenterPosition - position).Yaw);
+					FireArm(station, arm, target, fireYaw);
 			}
 		}
 
