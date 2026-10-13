@@ -49,9 +49,10 @@ namespace OpenRA.Test
 			protected override object Invoke(MethodInfo method, object[] args) => method.Name == "ActorsInBox"
 				? Targets : throw new NotSupportedException(method.Name);
 		}
-		sealed class SpaceInfo : TraitInfo, IOccupySpaceInfo
+		sealed class SpaceInfo : TraitInfo, IOccupySpaceInfo, IFacingInfo
 		{
 			public bool SharesCell => false;
+			public WAngle GetInitialFacing() => WAngle.Zero;
 			public IReadOnlyDictionary<CPos, SubCell> OccupiedCells(ActorInfo info, CPos location, SubCell subCell = SubCell.Any) =>
 				new Dictionary<CPos, SubCell> { [location] = subCell };
 			public override object Create(ActorInitializer init) => new Space();
@@ -90,7 +91,7 @@ namespace OpenRA.Test
 			public readonly Actor Host, Rifle, Rocket, Infantry, Tank;
 			public readonly AttackGarrisoned Attack;
 			public readonly Recorder Recorder;
-			public Fixture(WVec[] offsets = null, WAngle[] cones = null, WAngle[] yaws = null, bool cargo = false, AttackGarrisonedInfo schema = null, int rifleMinRange = 0, bool dynamicPriority = false)
+			public Fixture(WVec[] offsets = null, WAngle[] cones = null, WAngle[] yaws = null, bool cargo = false, AttackGarrisonedInfo schema = null, int rifleMinRange = 0, bool dynamicPriority = false, bool takeCover = false)
 			{
 				Log.AddChannel("debug", null);
 				Own = Player("own", "enemy"); Enemy = Player("enemy", "own");
@@ -98,11 +99,20 @@ namespace OpenRA.Test
 					("PauseOnCondition", new BooleanExpression("paused")), ("RequiresCondition", new BooleanExpression("!disabled")));
 				if (schema != null) { Set(schema, "PortOffsets", hostInfo.PortOffsets); hostInfo = schema; }
 				var body = Info<BodyOrientationInfo>(("QuantizedFacings", 0), ("UseClassicPerspectiveFudge", false));
-				ActorInfo Passenger(string name, string weapon, string prefer) => new(name,
-					new SpaceInfo(), body, new AttackFollowInfo(), Info<ArmamentInfo>(("Weapon", weapon), ("PauseOnCondition", new BooleanExpression("empty"))),
-					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
-					Info<AutoTargetInfo>(("DynamicWeaponPriority", dynamicPriority)), Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>(prefer)), ("Priority", 10)),
-					Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Priority", 1)));
+				ActorInfo Passenger(string name, string weapon, string prefer)
+				{
+					var traits = new List<TraitInfo>
+					{
+						new SpaceInfo(), body, takeCover ? (TraitInfo)new AttackFrontalInfo() : new AttackFollowInfo(),
+						Info<ArmamentInfo>(("Weapon", weapon), ("PauseOnCondition", new BooleanExpression("empty"))),
+						Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
+						Info<AutoTargetInfo>(("DynamicWeaponPriority", dynamicPriority)), Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>(prefer)), ("Priority", 10)),
+						Info<AutoTargetPriorityInfo>(("ValidTargets", new BitSet<TargetableType>("Infantry", "Vehicle")), ("Priority", 1)),
+					};
+					if (takeCover)
+						traits.Add(Info<TakeCoverInfo>(("Duration", -1)));
+					return new ActorInfo(name, traits.ToArray());
+				}
 				var actors = new Dictionary<string, ActorInfo>
 				{
 					["host"] = new("host", new SpaceInfo(), body, hostInfo,
@@ -115,7 +125,8 @@ namespace OpenRA.Test
 				};
 				actors["multi"] = new ActorInfo("multi", new SpaceInfo(), body,
 					Info<AttackMultiTurretedInfo>(("Turrets", ImmutableArray.Create("primary", "secondary"))),
-					Info<TurretedInfo>(("Turret", "primary")), Info<TurretedInfo>(("Turret", "secondary")),
+					Info<TurretedInfo>(("Turret", "primary"), ("PauseOnCondition", new BooleanExpression("turret-paused")), ("RequiresCondition", new BooleanExpression("!turret-disabled"))),
+					Info<TurretedInfo>(("Turret", "secondary"), ("PauseOnCondition", new BooleanExpression("turret-paused")), ("RequiresCondition", new BooleanExpression("!turret-disabled"))),
 					Info<ArmamentInfo>(("Weapon", "rifle"), ("Name", "primary"), ("Turret", "primary")),
 					Info<ArmamentInfo>(("Weapon", "rocket"), ("Name", "secondary"), ("Turret", "secondary")),
 					Info<PassengerInfo>(("Weight", 1)), new OpenRA.Mods.AS.Traits.GarrisonerInfo(),
@@ -252,6 +263,73 @@ namespace OpenRA.Test
 			f.Exit(multi);
 			Assert.That(f.Attack.Stations[0].WeaponTargets, Is.Empty);
 		}
+		[TestCase(false, "auto")]
+		[TestCase(true, "auto")]
+		[TestCase(false, "Attack")]
+		[TestCase(true, "Attack")]
+		[TestCase(false, "ForceAttack")]
+		[TestCase(true, "ForceAttack")]
+		public void TakeCoverPassengersAimWithTheirBodiesAndKeepFiring(bool cargo, string order)
+		{
+			var f = new Fixture(cargo: cargo, takeCover: true);
+			f.Tank.Trait<Space>().SetCenterPosition(f.Tank, new WPos(0, 3072, 0));
+			f.Enter(f.Rifle); f.Enter(f.Rocket);
+			f.Rifle.IsInWorld = false; f.Rocket.IsInWorld = false;
+			Assert.That(f.Rifle.Trait<Armament>().Turret, Is.TypeOf<TakeCover>());
+			Assert.That(f.Rocket.Trait<Armament>().Turret, Is.TypeOf<TakeCover>());
+			if (order != "auto")
+			{
+				f.Host.ResolveOrder(new Order(order, f.Host, Target.FromActor(f.Infantry), false));
+				f.Host.CurrentActivity.TickOuter(f.Host);
+			}
+
+			f.Tick(); f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2), "Both bound passengers must dispatch a shot.");
+			Assert.That(f.Rifle.Trait<IFacing>().Facing, Is.EqualTo((f.Infantry.CenterPosition - f.Rifle.CenterPosition).Yaw));
+			var rocketTarget = order == "auto" ? f.Tank : f.Infantry;
+			Assert.That(f.Rocket.Trait<IFacing>().Facing, Is.EqualTo((rocketTarget.CenterPosition - f.Rocket.CenterPosition).Yaw));
+			if (order == "auto")
+				Assert.That(f.Attack.Stations.Select(s => s.OpportunityTarget.Actor), Is.EqualTo(new[] { f.Infantry, f.Tank }));
+			else
+				Assert.That(f.Attack.Stations.All(s => s.RequestedTarget.Actor == f.Infantry), Is.True);
+
+			for (var i = 0; i < 8; i++) f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.GreaterThan(2), "TakeCover must not impose a one-burst limit.");
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		public void TakeCoverBodyAimCannotBypassThePortCone(bool cargo)
+		{
+			var f = new Fixture([WVec.Zero, WVec.Zero], [new WAngle(64), new WAngle(64)],
+				[WAngle.Zero, WAngle.Zero], cargo: cargo, takeCover: true);
+			f.Infantry.Trait<Space>().SetCenterPosition(f.Infantry, new WPos(0, 2048, 0));
+			f.Tank.Trait<Space>().SetCenterPosition(f.Tank, new WPos(0, 3072, 0));
+			f.Enter(f.Rifle); f.Enter(f.Rocket);
+			Assert.That(f.Attack.CanFireFromAnyPort(Target.FromActor(f.Infantry)), Is.False);
+			for (var i = 0; i < 6; i++) f.Tick();
+			Assert.That(f.Recorder.Events, Is.Empty);
+		}
+
+		[TestCase(false, "turret-paused")]
+		[TestCase(true, "turret-paused")]
+		[TestCase(false, "turret-disabled")]
+		[TestCase(true, "turret-disabled")]
+		public void RealPassengerTurretsDoNotFallBackToBodyAimWhenUnavailable(bool cargo, string condition)
+		{
+			var f = new Fixture(dynamicPriority: true, cargo: cargo);
+			var multi = f.Create("multi", f.Own, WPos.Zero);
+			f.Enter(multi); f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2));
+			foreach (var arm in multi.TraitsImplementing<Armament>())
+				for (var i = 0; i < 5; i++) ((ITick)arm).Tick(multi);
+			var token = multi.GrantCondition(condition);
+			f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(2), "A disabled or paused real turret must stay silent.");
+			multi.RevokeCondition(token); f.Tick();
+			Assert.That(f.Recorder.Events.Count, Is.EqualTo(4));
+		}
+
 		sealed class CustomArmorWarhead : TargetDamageWarhead
 		{
 			public override WeaponTargetScore TargetingVersus(Actor victim, HitShape shape) => new(25, 1);
