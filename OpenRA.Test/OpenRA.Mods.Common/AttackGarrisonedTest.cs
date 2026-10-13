@@ -364,6 +364,78 @@ namespace OpenRA.Test
 		}
 		[TestCase(false)]
 		[TestCase(true)]
+		public void NonAttackOrderClearsRequestAndPersistentResidue(bool cargo)
+		{
+			// A later non-attack command (Attack->Move on a mobile OpenTopped) must drop
+			// the explicit target completely; Release must not leak it into autonomy.
+			var f = new Fixture(cargo: cargo); f.Enter(f.Rifle); f.Enter(f.Rocket);
+			f.Attack.AttackTarget(Target.FromActor(f.Infantry), AttackSource.Default, false, true, true);
+			Assert.That(f.Attack.Stations.All(s => s.RequestedTarget.Actor == f.Infantry && s.RequestedForce), Is.True);
+			((IResolveOrder)f.Attack).ResolveOrder(f.Host, new Order("Move", f.Host, false));
+			Assert.That(f.Attack.Stations.All(s => s.RequestedTarget.Type == TargetType.Invalid), Is.True);
+			Assert.That(f.Attack.Stations.All(s => s.OpportunityTarget.Type == TargetType.Invalid), Is.True,
+				"Persistence residue may not survive a later non-attack command.");
+		}
+		[Test]
+		public void CompetingPreemptionResidueAlsoClearsOnNonAttackOrder()
+		{
+			// When a competing attack trait displaced the activity first, Release already
+			// converted the request into a persistent opportunity; the later Move must
+			// remove that residue too, not just the live request.
+			var persistent = typeof(FirePortStation).GetField("Persistent", BindingFlags.Instance | BindingFlags.NonPublic)
+				?? throw new InvalidOperationException("Fire-port persistence flag was not found.");
+			var f = new Fixture(); f.Enter(f.Rifle);
+			var activity = f.Attack.GetAttackActivity(f.Host, AttackSource.Default, Target.FromActor(f.Infantry), false, false);
+			activity.TickOuter(f.Host); activity.Cancel(f.Host); activity.TickOuter(f.Host);
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Actor, Is.SameAs(f.Infantry));
+			Assert.That((bool)persistent.GetValue(f.Attack.Stations[0]), Is.True);
+			((IResolveOrder)f.Attack).ResolveOrder(f.Host, new Order("Move", f.Host, false));
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Type, Is.EqualTo(TargetType.Invalid));
+			Assert.That((bool)persistent.GetValue(f.Attack.Stations[0]), Is.False);
+		}
+		[Test]
+		public void NonAttackOrderKeepsAutonomousOpportunities()
+		{
+			// Scan- and retaliation-derived opportunities are not order state: the
+			// occupants keep their autonomous targets while the host moves.
+			var f = new Fixture(); f.Enter(f.Rifle); f.Enter(f.Rocket);
+			f.Tick(); f.Tick();
+			Assert.That(f.Attack.Stations.Select(s => s.OpportunityTarget.Actor), Is.EqualTo(new[] { f.Infantry, f.Tank }));
+			((IResolveOrder)f.Attack).ResolveOrder(f.Host, new Order("Move", f.Host, false));
+			Assert.That(f.Attack.Stations.Select(s => s.OpportunityTarget.Actor), Is.EqualTo(new[] { f.Infantry, f.Tank }));
+		}
+		[Test]
+		public void QueuedNonAttackOrderDefersClearUntilActivityRelease()
+		{
+			// A queued command must not displace the running request; when the attack
+			// activity ends on its own the pending clear suppresses persistence.
+			var f = new Fixture(); f.Enter(f.Rifle);
+			var activity = f.Attack.GetAttackActivity(f.Host, AttackSource.Default, Target.FromActor(f.Infantry), false, false);
+			activity.TickOuter(f.Host);
+			((IResolveOrder)f.Attack).ResolveOrder(f.Host, new Order("Move", f.Host, true));
+			Assert.That(f.Attack.Stations[0].RequestedTarget.Actor, Is.SameAs(f.Infantry),
+				"Queued commands apply in order and do not displace the running request.");
+			activity.Cancel(f.Host); activity.TickOuter(f.Host);
+			Assert.That(f.Attack.Stations[0].RequestedTarget.Type, Is.EqualTo(TargetType.Invalid));
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Type, Is.EqualTo(TargetType.Invalid));
+		}
+		[Test]
+		public void QueuedClearIsDroppedByANewerExplicitOrder()
+		{
+			// A non-queued order empties the queue, so a pending deferred clear must
+			// never be consumed by the release of a newer attack's activity.
+			var f = new Fixture(); f.Enter(f.Rifle);
+			var activity = f.Attack.GetAttackActivity(f.Host, AttackSource.Default, Target.FromActor(f.Infantry), false, false);
+			activity.TickOuter(f.Host);
+			((IResolveOrder)f.Attack).ResolveOrder(f.Host, new Order("Move", f.Host, true));
+			f.Attack.AttackTarget(Target.FromActor(f.Tank), AttackSource.Default, false, true);
+			Assert.That(f.Attack.Stations[0].RequestedTarget.Actor, Is.SameAs(f.Tank));
+			var next = (PassengerFirePortAttackActivity)f.Host.CurrentActivity;
+			next.Cancel(f.Host); next.TickOuter(f.Host);
+			Assert.That(f.Attack.Stations[0].OpportunityTarget.Actor, Is.SameAs(f.Tank));
+		}
+		[TestCase(false)]
+		[TestCase(true)]
 		public void OccupantsWithoutUsableAutoTargetFireThroughHostAuthority(bool cargo)
 		{
 			// Passengers whose AutoTarget is absent or disabled keep host-driven coverage,
