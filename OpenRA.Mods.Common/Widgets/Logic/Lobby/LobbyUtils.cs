@@ -110,6 +110,11 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 					Title = "Kick",
 					OnClick = onClick
 				},
+				new()
+				{
+					Title = c.IsMuted ? "Unmute Chat" : "Mute Chat",
+					OnClick = () => orderManager.IssueOrder(Order.Command($"mute_chat {c.Index}"))
+				},
 			};
 
 			if (orderManager.LobbyInfo.GlobalSettings.Dedicated)

@@ -147,6 +147,7 @@ namespace OpenRA.Network
 			public string Bot; // Bot type, null for real clients
 			public int BotControllerClientIndex; // who added the bot to the slot
 			public bool IsAdmin;
+			public bool IsMuted;
 			public bool IsReady => State == ClientState.Ready;
 			public bool IsInvalid => State == ClientState.Invalid;
 			public bool IsObserver => Slot == null;

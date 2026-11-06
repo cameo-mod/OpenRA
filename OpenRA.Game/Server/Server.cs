@@ -112,6 +112,9 @@ namespace OpenRA.Server
 		const string YouWereKicked = "notification-you-were-kicked";
 
 		[FluentReference]
+		const string YouAreChatMuted = "notification-you-are-chat-muted";
+
+		[FluentReference]
 		const string GameStarted = "notification-game-started";
 
 		public readonly MersenneTwister Random = new();
@@ -1019,6 +1022,13 @@ namespace OpenRA.Server
 
 					case "Chat":
 					{
+						var chatClient = GetClient(conn);
+						if (chatClient != null && chatClient.IsMuted)
+						{
+							SendFluentMessageTo(conn, YouAreChatMuted);
+							break;
+						}
+
 						if (!IsMultiplayer || !playerMessageTracker.IsPlayerAtFloodLimit(conn))
 							DispatchOrdersToClients(conn, 0, o.Serialize());
 

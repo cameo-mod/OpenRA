@@ -68,6 +68,21 @@ namespace OpenRA.Mods.Common.Server
 		const string TempBan = "notification-temp-ban";
 
 		[FluentReference]
+		const string AdminChatMute = "notification-admin-chat-mute";
+
+		[FluentReference]
+		const string NoChatMuteSelf = "notification-chat-mute-self";
+
+		[FluentReference]
+		const string ChatMuteNone = "notification-chat-mute-none";
+
+		[FluentReference("admin", "player")]
+		const string AdminChatMuted = "notification-admin-chat-muted";
+
+		[FluentReference("admin", "player")]
+		const string AdminChatUnmuted = "notification-admin-chat-unmuted";
+
+		[FluentReference]
 		const string NoTransferAdmin = "notification-admin-transfer-admin";
 
 		[FluentReference]
@@ -180,6 +195,7 @@ namespace OpenRA.Mods.Common.Server
 				{ "assignteams", AssignTeams },
 				{ "kick", Kick },
 				{ "vote_kick", VoteKick },
+				{ "mute_chat", MuteChat },
 				{ "make_admin", MakeAdmin },
 				{ "make_spectator", MakeSpectator },
 				{ "name", Name },
@@ -216,8 +232,10 @@ namespace OpenRA.Mods.Common.Server
 		{
 			lock (server.LobbyInfoLock)
 			{
-				// Kick command is always valid for the host
-				if (command.StartsWith("kick ", StringComparison.Ordinal) || command.StartsWith("vote_kick ", StringComparison.Ordinal))
+				// These commands are always valid for the host (lobby or in-game)
+				if (command.StartsWith("kick ", StringComparison.Ordinal) ||
+					command.StartsWith("vote_kick ", StringComparison.Ordinal) ||
+					command.StartsWith("mute_chat ", StringComparison.Ordinal))
 					return true;
 
 				if (server.State == ServerState.GameStarted)
@@ -887,6 +905,48 @@ namespace OpenRA.Mods.Common.Server
 				server.SyncLobbyClients();
 				server.SyncLobbySlots();
 
+				return true;
+			}
+		}
+
+		static bool MuteChat(S server, Connection conn, Session.Client client, string s)
+		{
+			lock (server.LobbyInfo)
+			{
+				if (!client.IsAdmin)
+				{
+					server.SendFluentMessageTo(conn, AdminChatMute);
+					return true;
+				}
+
+				if (!Exts.TryParseInt32Invariant(s, out var muteClientID))
+				{
+					server.SendFluentMessageTo(conn, MalformedCommand, ["command", "mute_chat"]);
+					return true;
+				}
+
+				var muteConn = server.Conns.SingleOrDefault(c => server.GetClient(c)?.Index == muteClientID);
+				if (muteConn == null)
+				{
+					server.SendFluentMessageTo(conn, ChatMuteNone);
+					return true;
+				}
+
+				var muteClient = server.GetClient(muteConn);
+				if (client == muteClient)
+				{
+					server.SendFluentMessageTo(conn, NoChatMuteSelf);
+					return true;
+				}
+
+				muteClient.IsMuted = !muteClient.IsMuted;
+
+				if (muteClient.IsMuted)
+					server.SendFluentMessage(AdminChatMuted, "admin", client.Name, "player", muteClient.Name);
+				else
+					server.SendFluentMessage(AdminChatUnmuted, "admin", client.Name, "player", muteClient.Name);
+
+				server.SyncLobbyClients();
 				return true;
 			}
 		}
