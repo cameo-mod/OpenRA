@@ -147,6 +147,27 @@ namespace OpenRA.Mods.Common.Traits
 
 	public class ProductionQueue : IResolveOrder, ITick, ITechTreeElement, INotifyOwnerChanged, INotifyKilled, INotifySold, ISync, INotifyTransform, INotifyCreated
 	{
+		const int MaximumUnbuildableEvictionReceipts = 1024;
+		const int UnbuildableEvictionReceiptLifetime = 64;
+		const string UnbuildableEvictionReason = "unbuildable-evicted";
+
+		sealed class UnbuildableEvictionReceipt
+		{
+			public readonly ProductionItem Item;
+			public readonly Player Owner;
+			public readonly int Tick;
+			public readonly string Reason;
+			public uint EpisodeId;
+
+			public UnbuildableEvictionReceipt(ProductionItem item, Player owner, int tick)
+			{
+				Item = item;
+				Owner = owner;
+				Tick = tick;
+				Reason = UnbuildableEvictionReason;
+			}
+		}
+
 		public readonly ProductionQueueInfo Info;
 
 		// A list of things we could possibly build
@@ -158,6 +179,10 @@ namespace OpenRA.Mods.Common.Traits
 		// Cached set of buildable item names from the previous CancelUnbuildableItems pass,
 		// used to skip the per-tick scan when the buildable set hasn't changed.
 		HashSet<string> lastBuildableNames = [];
+
+		// Observation-only receipts created exclusively by CancelUnbuildableItems. This is
+		// deliberately not VerifySync state: it cannot affect gameplay or the sync hash.
+		readonly List<UnbuildableEvictionReceipt> unbuildableEvictionReceipts = [];
 
 		protected Production[] productionTraits;
 		protected ConditionPrerequisiteInfo[] conditionPrerequisites;
@@ -440,16 +465,20 @@ namespace OpenRA.Mods.Common.Traits
 				if (replaced)
 					continue;
 
+				var item = Queue[i];
+
 				// Refund spent resources
-				if (Queue[i].ResourcesPaid > 0)
+				if (item.ResourcesPaid > 0)
 				{
-					playerResources.GiveResources(Queue[i].ResourcesPaid);
-					Queue[i].RemainingCost += Queue[i].ResourcesPaid;
+					playerResources.GiveResources(item.ResourcesPaid);
+					item.RemainingCost += item.ResourcesPaid;
 				}
 
 				// Refund what's been paid so far
-				playerResources.GiveCash(Queue[i].TotalCost - Queue[i].RemainingCost);
-				EndProduction(Queue[i], true);
+				playerResources.GiveCash(item.TotalCost - item.RemainingCost);
+				EndProduction(item, true, out var removed);
+				if (removed)
+					RecordUnbuildableEviction(item, Actor.Owner, Actor.World.WorldTick);
 				cancelledAnItem = true;
 			}
 
@@ -460,6 +489,82 @@ namespace OpenRA.Mods.Common.Traits
 			}
 
 			lastBuildableNames = buildableNames;
+		}
+
+		// The only receipt producer. Call only after CancelUnbuildableItems has confirmed
+		// that EndProduction actually removed this item from this queue.
+		void RecordUnbuildableEviction(ProductionItem item, Player owner, int tick)
+		{
+			PruneUnbuildableEvictionReceipts(tick);
+
+			// Never overwrite a live receipt. The unrecorded removal remains unproven and
+			// the observer will classify it through the existing fail-closed path.
+			if (unbuildableEvictionReceipts.Count >= MaximumUnbuildableEvictionReceipts
+				|| unbuildableEvictionReceipts.Any(r => ReferenceEquals(r.Item, item)))
+				return;
+
+			unbuildableEvictionReceipts.Add(new UnbuildableEvictionReceipt(item, owner, tick));
+		}
+
+		void PruneUnbuildableEvictionReceipts(int tick)
+		{
+			unbuildableEvictionReceipts.RemoveAll(r => tick < r.Tick
+				|| (long)tick - r.Tick > UnbuildableEvictionReceiptLifetime);
+		}
+
+		void RetireUnbuildableEvictionReceipts(ProductionItem item)
+		{
+			unbuildableEvictionReceipts.RemoveAll(r => ReferenceEquals(r.Item, item));
+		}
+
+		/// <summary>Bind an eviction receipt to the exact item, owner and nonzero bot episode.</summary>
+		public bool TryBindUnbuildableEviction(ProductionItem item, Player owner, uint episodeId, int tick)
+		{
+			PruneUnbuildableEvictionReceipts(tick);
+			var matches = unbuildableEvictionReceipts.Where(r => ReferenceEquals(r.Item, item)).ToArray();
+			if (matches.Length != 1)
+			{
+				if (matches.Length > 1)
+					RetireUnbuildableEvictionReceipts(item);
+				return false;
+			}
+
+			var receipt = matches[0];
+			if (item == null || owner == null || episodeId == 0 || tick < receipt.Tick
+				|| !ReferenceEquals(receipt.Owner, owner) || !ReferenceEquals(Actor.Owner, owner)
+				|| (receipt.EpisodeId != 0 && receipt.EpisodeId != episodeId))
+			{
+				RetireUnbuildableEvictionReceipts(item);
+				return false;
+			}
+
+			receipt.EpisodeId = episodeId;
+			return true;
+		}
+
+		/// <summary>Consume or retire the matching eviction receipt exactly once.</summary>
+		public bool TryConsumeUnbuildableEviction(ProductionItem item, Player owner, uint episodeId, int tick)
+		{
+			PruneUnbuildableEvictionReceipts(tick);
+			var matches = unbuildableEvictionReceipts.Where(r => ReferenceEquals(r.Item, item)).ToArray();
+			if (matches.Length != 1)
+			{
+				if (matches.Length > 1)
+					RetireUnbuildableEvictionReceipts(item);
+				return false;
+			}
+
+			var receipt = matches[0];
+			if (item == null || owner == null || episodeId == 0 || tick < receipt.Tick
+				|| !ReferenceEquals(receipt.Owner, owner) || !ReferenceEquals(Actor.Owner, owner)
+				|| receipt.EpisodeId != episodeId)
+			{
+				RetireUnbuildableEvictionReceipts(item);
+				return false;
+			}
+
+			unbuildableEvictionReceipts.Remove(receipt);
+			return true;
 		}
 
 		// Returns a replacement item for queueItem if its actor has been superseded by an upgraded
@@ -857,8 +962,11 @@ namespace OpenRA.Mods.Common.Traits
 		}
 
 		public void EndProduction(ProductionItem item, bool cancelling = false)
+			=> EndProduction(item, cancelling, out _);
+
+		void EndProduction(ProductionItem item, bool cancelling, out bool removed)
 		{
-			Queue.Remove(item);
+			removed = Queue.Remove(item);
 
 			if (item.Infinite && !cancelling)
 				Queue.Add(new ProductionItem(this, item.Item, item.TotalCost, playerPower, item.OnComplete) { Infinite = true });
