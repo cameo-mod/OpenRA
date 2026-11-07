@@ -234,6 +234,9 @@ namespace OpenRA.Mods.Common.Traits
 
 		protected void ClearQueue()
 		{
+			// Owner changes, sales, kills and transforms all invalidate pending observations.
+			unbuildableEvictionReceipts.Clear();
+
 			// Refund the current item
 			foreach (var item in Queue)
 			{
@@ -499,8 +502,14 @@ namespace OpenRA.Mods.Common.Traits
 
 			// Never overwrite a live receipt. The unrecorded removal remains unproven and
 			// the observer will classify it through the existing fail-closed path.
-			if (unbuildableEvictionReceipts.Count >= MaximumUnbuildableEvictionReceipts
-				|| unbuildableEvictionReceipts.Any(r => ReferenceEquals(r.Item, item)))
+			var duplicates = unbuildableEvictionReceipts.Count(r => ReferenceEquals(r.Item, item));
+			if (duplicates > 0)
+			{
+				RetireUnbuildableEvictionReceipts(item);
+				return;
+			}
+
+			if (unbuildableEvictionReceipts.Count >= MaximumUnbuildableEvictionReceipts)
 				return;
 
 			unbuildableEvictionReceipts.Add(new UnbuildableEvictionReceipt(item, owner, tick));
@@ -565,6 +574,15 @@ namespace OpenRA.Mods.Common.Traits
 
 			unbuildableEvictionReceipts.Remove(receipt);
 			return true;
+		}
+
+		/// <summary>Retire an eviction receipt when a proven placement or lifecycle event takes precedence.</summary>
+		public bool RetireUnbuildableEviction(ProductionItem item, int tick)
+		{
+			PruneUnbuildableEvictionReceipts(tick);
+			var matches = unbuildableEvictionReceipts.Count(r => ReferenceEquals(r.Item, item));
+			RetireUnbuildableEvictionReceipts(item);
+			return matches == 1;
 		}
 
 		// Returns a replacement item for queueItem if its actor has been superseded by an upgraded
