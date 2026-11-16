@@ -256,12 +256,20 @@ namespace OpenRA
 			}
 			catch (Exception e)
 			{
+				// The exception may leave the reader anywhere inside the payload: the frame
+				// cannot be framed past this point, so the caller discards the rest of it.
+				malformed = true;
 				Log.Write("debug", "Caught exception while processing order");
 				Log.Write("debug", e);
 
 				// HACK: this can hopefully go away in the future
-				TextNotificationsManager.Debug("Ignoring malformed order that would have crashed the game");
-				TextNotificationsManager.Debug("Please file a bug report and include the replay from this match");
+				// Game.Settings is null outside a running game (unit tests, utility); the
+				// notification needs it, the discard above does not.
+				if (Game.Settings != null)
+				{
+					TextNotificationsManager.Debug("Ignoring malformed order that would have crashed the game");
+					TextNotificationsManager.Debug("Please file a bug report and include the replay from this match");
+				}
 
 				return null;
 			}

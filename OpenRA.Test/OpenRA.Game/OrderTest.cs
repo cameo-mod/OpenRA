@@ -130,6 +130,48 @@ namespace OpenRA.Test
 			Assert.That(r.BaseStream.Position, Is.LessThan(r.BaseStream.Length));
 		}
 
+		// A valid "First" order, a malformed middle, then bytes that form a valid Handshake.
+		static byte[] FrameWithMalformedMiddle(System.Action<BinaryWriter> writeMalformed)
+		{
+			var ms = new MemoryStream();
+			var w = new BinaryWriter(ms);
+			w.Write(new Order("First", null, false).Serialize());
+			writeMalformed(w);
+			w.Write((byte)OrderType.Handshake);
+			w.Write("Spurious");
+			w.Write("x");
+			w.Flush();
+			return ms.ToArray();
+		}
+
+		[TestCase(TestName = "ReadString throwing mid-payload discards the rest of the frame")]
+		public void ReadStringThrowsDiscardsRestOfFrame()
+		{
+			// Five 7-bit length bytes that all carry the continuation bit: BinaryReader.ReadString
+			// throws FormatException after them, with the Handshake bytes still unread.
+			var frame = FrameWithMalformedMiddle(w =>
+			{
+				w.Write((byte)OrderType.Fields);
+				w.Write(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF });
+			});
+
+			Assert.That(ParseFrame(frame), Is.EqualTo(new[] { "First" }));
+
+			var r = new BinaryReader(new MemoryStream(frame));
+			Order.Deserialize(null, r, out _);
+			var bad = Order.Deserialize(null, r, out var malformed);
+			Assert.That(bad, Is.Null);
+			Assert.That(malformed, Is.True);
+		}
+
+		[TestCase(TestName = "Unknown order type discards the rest of the frame")]
+		public void UnknownTypeDiscardsRestOfFrame()
+		{
+			// 0x42 is not an OrderType: its length is unknown, so nothing after it can be framed.
+			var frame = FrameWithMalformedMiddle(w => w.Write((byte)0x42));
+			Assert.That(ParseFrame(frame), Is.EqualTo(new[] { "First" }));
+		}
+
 		[TestCase(TestName = "Well-formed frames still yield every order")]
 		public void WellFormedFrameYieldsAll()
 		{
