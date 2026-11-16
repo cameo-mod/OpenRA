@@ -9,6 +9,9 @@
  */
 #endregion
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 
 namespace OpenRA.Test
@@ -32,6 +35,26 @@ namespace OpenRA.Test
 				players.Players.Add(names[i], null);
 
 			Assert.That(players.Players.Keys, Is.EqualTo(names));
+		}
+
+		// MapPlayers(IEnumerable<MiniYamlNode>) builds Players with this constructor (MapPlayers.cs).
+		// PlayerReference needs Game.ModData, so the pairs carry null values here; only the keys matter.
+		static OrderedDictionary<string, PlayerReference> FromPairs(params string[] keys)
+		{
+			return new OrderedDictionary<string, PlayerReference>(keys.Select(k => KeyValuePair.Create(k, (PlayerReference)null)));
+		}
+
+		[TestCase(TestName = "Players built from definitions keep the definition order")]
+		public void PlayersFromDefinitionsKeepOrder()
+		{
+			string[] names = ["Neutral", "Multi1", "Multi0", "Creeps"];
+			Assert.That(FromPairs(names).Keys, Is.EqualTo(names));
+		}
+
+		[TestCase(TestName = "A duplicate player name is rejected, as the old ToDictionary did")]
+		public void DuplicatePlayerNameThrows()
+		{
+			Assert.Throws<ArgumentException>(() => FromPairs("Neutral", "Multi0", "Multi1", "Multi0"));
 		}
 	}
 }
