@@ -10,7 +10,9 @@
 #endregion
 
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
+using OpenRA.Network;
 using OpenRA.Traits;
 
 namespace OpenRA.Test
@@ -69,6 +71,73 @@ namespace OpenRA.Test
 				IsImmediate = true,
 			}.Serialize();
 			Assert.That(RoundTripOrder(o), Is.EqualTo(o));
+		}
+
+		// A Fields order whose element count exceeds the bytes left in the frame. The reader stops
+		// right after the count, inside the payload. The trailing bytes are a well-formed Handshake,
+		// so parsing on from the reader position would yield a spurious "Spurious" order.
+		static byte[] FrameWithCorruptCount(short flags, bool terrain)
+		{
+			var ms = new MemoryStream();
+			var w = new BinaryWriter(ms);
+			w.Write(new Order("First", null, false).Serialize());
+
+			w.Write((byte)OrderType.Fields);
+			w.Write("Bad");
+			w.Write(flags);
+			if (terrain)
+			{
+				w.Write((byte)TargetType.Terrain);
+				w.Write(0);
+				w.Write(0);
+				w.Write(0);
+				w.Write((short)1000);
+			}
+			else
+				w.Write(1000);
+
+			w.Write((byte)OrderType.Handshake);
+			w.Write("Spurious");
+			w.Write("x");
+			w.Flush();
+			return ms.ToArray();
+		}
+
+		static string[] ParseFrame(byte[] frame)
+		{
+			return new OrderPacket(new MemoryStream(frame)).GetOrders(null).Select(o => o.OrderString).ToArray();
+		}
+
+		[TestCase((short)0x02, false, TestName = "Corrupt ExtraActors count discards the rest of the frame")]
+		[TestCase((short)0x100, false, TestName = "Corrupt Grouped count discards the rest of the frame")]
+		[TestCase((short)0x01, true, TestName = "Corrupt terrain position count discards the rest of the frame")]
+		public void CorruptCountDiscardsRestOfFrame(short flags, bool terrain)
+		{
+			Assert.That(ParseFrame(FrameWithCorruptCount(flags, terrain)), Is.EqualTo(new[] { "First" }));
+		}
+
+		[TestCase(TestName = "Corrupt count reports malformed and leaves the reader inside the payload")]
+		public void CorruptCountReportsMalformed()
+		{
+			var r = new BinaryReader(new MemoryStream(FrameWithCorruptCount(0x02, false)));
+			var first = Order.Deserialize(null, r, out var firstMalformed);
+			Assert.That(first?.OrderString, Is.EqualTo("First"));
+			Assert.That(firstMalformed, Is.False);
+
+			var bad = Order.Deserialize(null, r, out var badMalformed);
+			Assert.That(bad, Is.Null);
+			Assert.That(badMalformed, Is.True);
+			Assert.That(r.BaseStream.Position, Is.LessThan(r.BaseStream.Length));
+		}
+
+		[TestCase(TestName = "Well-formed frames still yield every order")]
+		public void WellFormedFrameYieldsAll()
+		{
+			var ms = new MemoryStream();
+			foreach (var name in new[] { "A", "B", "C" })
+				ms.Write(new Order(name, null, Target.Invalid, false) { ExtraData = 7 }.Serialize());
+
+			Assert.That(ParseFrame(ms.ToArray()), Is.EqualTo(new[] { "A", "B", "C" }));
 		}
 	}
 }

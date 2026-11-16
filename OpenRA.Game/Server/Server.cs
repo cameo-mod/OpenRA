@@ -955,7 +955,12 @@ namespace OpenRA.Server
 			{
 				while (ms.Position < ms.Length)
 				{
-					var o = Order.Deserialize(null, br);
+					var o = Order.Deserialize(null, br, out var malformed);
+
+					// See OrderPacket.GetOrders: the rest of a frame after a malformed order is discarded.
+					if (malformed)
+						break;
+
 					if (o != null)
 						InterpretServerOrder(conn, o);
 				}

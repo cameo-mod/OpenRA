@@ -94,6 +94,18 @@ namespace OpenRA
 
 		public static Order Deserialize(World world, BinaryReader r)
 		{
+			return Deserialize(world, r, out _);
+		}
+
+		/// <summary>
+		/// <paramref name="malformed"/> is true when the order could not be framed: an unknown order
+		/// type or a rejected element count. The reader is then left inside the bad payload, so the
+		/// caller must discard the rest of the frame instead of parsing the following bytes as orders.
+		/// A null result with <paramref name="malformed"/> false (a dead subject) consumed its bytes.
+		/// </summary>
+		public static Order Deserialize(World world, BinaryReader r, out bool malformed)
+		{
+			malformed = false;
 			try
 			{
 				var type = (OrderType)r.ReadByte();
@@ -162,7 +174,10 @@ namespace OpenRA
 										if (numberOfTerrainPositions == -1)
 											target = Target.FromPos(pos);
 										else if (!HasRemainingBytes(r, numberOfTerrainPositions, 3 * sizeof(int)))
+										{
+											malformed = true;
 											return null;
+										}
 										else
 										{
 											var terrainPositions = new WPos[numberOfTerrainPositions];
@@ -185,7 +200,10 @@ namespace OpenRA
 						if (flags.HasField(OrderFields.ExtraActors))
 						{
 							if (!TryReadActorCount(r, out var count))
+							{
+								malformed = true;
 								return null;
+							}
 
 							if (world != null)
 								extraActors = Exts.MakeArray(count, _ => world.GetActorById(r.ReadUInt32()));
@@ -200,7 +218,10 @@ namespace OpenRA
 						if (flags.HasField(OrderFields.Grouped))
 						{
 							if (!TryReadActorCount(r, out var count))
+							{
+								malformed = true;
 								return null;
+							}
 
 							if (world != null)
 								groupedActors = Exts.MakeArray(count, _ => world.GetActorById(r.ReadUInt32()));
@@ -228,6 +249,7 @@ namespace OpenRA
 					default:
 					{
 						Log.Write("debug", $"Received unknown order with type {type}");
+						malformed = true;
 						return null;
 					}
 				}

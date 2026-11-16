@@ -46,7 +46,13 @@ namespace OpenRA.Network
 			var reader = new BinaryReader(data);
 			while (data.Position < data.Length)
 			{
-				var o = Order.Deserialize(world, reader);
+				var o = Order.Deserialize(world, reader, out var malformed);
+
+				// A malformed order leaves the reader inside its payload: the rest of the frame
+				// cannot be framed, so it is discarded rather than parsed as further orders.
+				if (malformed)
+					yield break;
+
 				if (o != null)
 					yield return o;
 			}
