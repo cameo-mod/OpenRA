@@ -679,6 +679,18 @@ namespace OpenRA.Mods.Common.Traits
 	}
 
 	/// <summary>
+	/// Lets a bot module keep cells free that it has reserved for a building it is about to place
+	/// (for example a refinery site found while the refinery is still in production). Bot modules
+	/// that deploy or place structures on their own consult every implementer on the player actor
+	/// and skip a vetoed top-left cell. No implementer means no veto: behaviour is unchanged.
+	/// </summary>
+	[RequireExplicitImplementation]
+	public interface IBotPlacementVeto
+	{
+		bool VetoesPlacement(Player player, CPos topLeft, ActorInfo building);
+	}
+
+	/// <summary>
 	/// Where an MCV should found its next base, from a module that scores resource fields (Cameo's expansion
 	/// planner). McvExpansionManagerBotModule deploys toward the first non-null site; null keeps its own choice.
 	/// It decides where, never when: expansion triggers stay the MCV module's own.

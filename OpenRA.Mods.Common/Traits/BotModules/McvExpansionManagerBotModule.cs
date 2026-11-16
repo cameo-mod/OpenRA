@@ -153,6 +153,7 @@ namespace OpenRA.Mods.Common.Traits
 		IBotPositionsUpdated[] notifyPositionsUpdated;
 		IBotRequestUnitProduction[] requestUnitProduction;
 		IBotSuggestRefineryProduction[] suggestRefineryProduction;
+		IBotPlacementVeto[] placementVetoes = [];
 		IBotMcvExpansionSiteProvider[] siteProviders;
 
 		readonly Dictionary<Actor, CPos?> activeMCVs = [];
@@ -213,6 +214,20 @@ namespace OpenRA.Mods.Common.Traits
 			SkipUnreachableDeployCells = Info.SkipUnreachableDeployCellsCondition.Evaluate(conditions);
 		}
 
+		// REFSCAN D-6: engine placement legality, then every IBotPlacementVeto on the player actor.
+		// With no implementer this is exactly CanPlaceBuilding: the loop is empty and draws nothing.
+		bool CanDeployAt(CPos topLeft, ActorInfo building, BuildingInfo buildingInfo, Actor mcv)
+		{
+			if (!world.CanPlaceBuilding(topLeft, building, buildingInfo, mcv))
+				return false;
+
+			foreach (var veto in placementVetoes)
+				if (veto.VetoesPlacement(player, topLeft, building))
+					return false;
+
+			return true;
+		}
+
 		protected override void Created(Actor self)
 		{
 			// Special case handling is required for the Player actor.
@@ -222,6 +237,7 @@ namespace OpenRA.Mods.Common.Traits
 			notifyPositionsUpdated = self.TraitsImplementing<IBotPositionsUpdated>().ToArray();
 			requestUnitProduction = self.TraitsImplementing<IBotRequestUnitProduction>().ToArray();
 			suggestRefineryProduction = self.TraitsImplementing<IBotSuggestRefineryProduction>().ToArray();
+			placementVetoes = self.TraitsImplementing<IBotPlacementVeto>().ToArray();
 			pathfinder = world.WorldActor.Trait<PathFinder>();
 			playerResources = self.Owner.PlayerActor.Trait<PlayerResources>();
 		}
@@ -910,7 +926,7 @@ namespace OpenRA.Mods.Common.Traits
 			}
 			else
 			{
-				if (!world.CanPlaceBuilding(mcv.Location + transformsInfo.Offset, actorInfo, bi, mcv))
+				if (!CanDeployAt(mcv.Location + transformsInfo.Offset, actorInfo, bi, mcv))
 					return;
 				desiredLocation = mcv.Location;
 			}
@@ -986,7 +1002,7 @@ namespace OpenRA.Mods.Common.Traits
 				if (SkipUnreachableDeployCells)
 				{
 					var result = McvDeployCellSearch.Find(cells, source, target, tryMaintainRange,
-						cell => world.CanPlaceBuilding(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv),
+						cell => CanDeployAt(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv),
 						cell => mobile == null || pathfinder.PathMightExistForLocomotorBlockedByImmovable(mobile.Locomotor, source, cell),
 						out var tally);
 					if (!result.HasValue)
@@ -998,7 +1014,7 @@ namespace OpenRA.Mods.Common.Traits
 				CPos? bestcell = null;
 				foreach (var cell in cells)
 				{
-					if (world.CanPlaceBuilding(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv))
+					if (CanDeployAt(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv))
 					{
 						bestcell = cell;
 						break;
@@ -1019,7 +1035,7 @@ namespace OpenRA.Mods.Common.Traits
 					cells = cells.OrderBy(c => (c - target).LengthSquared);
 					foreach (var cell in cells)
 					{
-						if (world.CanPlaceBuilding(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv))
+						if (CanDeployAt(cell + offset, transformIntoInfo, transformIntoBuildingInfo, mcv))
 						{
 							if (mobile != null && !pathfinder.PathMightExistForLocomotorBlockedByImmovable(mobile.Locomotor, source, cell))
 								return null;
