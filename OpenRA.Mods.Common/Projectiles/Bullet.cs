@@ -156,6 +156,22 @@ namespace OpenRA.Mods.Common.Projectiles
 		[Desc("Color of the moving projectile streak.")]
 		public readonly Color ProjectileStreakColor = Color.White;
 
+		[Desc("Width of the moving projectile streak at its tail. Defaults to ProjectileStreakWidth.")]
+		public readonly WDist? ProjectileStreakTailWidth = null;
+
+		[Desc("Width at the tip of the leading taper. Defaults to ProjectileStreakWidth.",
+			"Only used when ProjectileStreakHeadTaperLength is non-zero.")]
+		public readonly WDist? ProjectileStreakHeadWidth = null;
+
+		[Desc("Length of the leading taper on the moving projectile streak. Zero disables the head taper.")]
+		public readonly WDist ProjectileStreakHeadTaperLength = WDist.Zero;
+
+		[Desc("Color of the moving projectile streak at its tail. Defaults to ProjectileStreakColor.")]
+		public readonly Color? ProjectileStreakTailColor = null;
+
+		[Desc("Alpha value [from 0 to 255] of ProjectileStreakTailColor.")]
+		public readonly int ProjectileStreakTailColorAlpha = 255;
+
 		[Desc("Equivalent to sequence ZOffset. Controls Z sorting.")]
 		public readonly int ProjectileStreakZOffset = 2047;
 
@@ -409,8 +425,12 @@ namespace OpenRA.Mods.Common.Projectiles
 			if (wr.World.FogObscures(head) && wr.World.FogObscures(tail))
 				yield break;
 
-			yield return new BeamRenderable(tail, info.ProjectileStreakZOffset, head - tail, BeamRenderableShape.Flat,
-				info.ProjectileStreakWidth, info.ProjectileStreakColor, 0f);
+			var style = new ProjectileStreakStyle(info.ProjectileStreakWidth, info.ProjectileStreakTailWidth,
+				info.ProjectileStreakHeadWidth, info.ProjectileStreakHeadTaperLength, info.ProjectileStreakColor,
+				info.ProjectileStreakTailColor, info.ProjectileStreakTailColorAlpha, info.ProjectileStreakZOffset);
+
+			foreach (var beam in ProjectileStreak.Render(style, head, tail, visibleLength))
+				yield return beam;
 		}
 
 		protected IEnumerable<IRenderable> RenderAnimation(WorldRenderer wr)
