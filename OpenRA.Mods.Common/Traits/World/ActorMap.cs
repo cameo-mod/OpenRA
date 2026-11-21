@@ -69,6 +69,10 @@ namespace OpenRA.Mods.Common.Traits
 				if (Removed || !Dirty)
 					return;
 
+				// Consume the current dirty flag before callbacks: an influence change
+				// made by a callback sets it again and is processed on the next tick.
+				Dirty = false;
+
 				// PERF: Reuse collection to avoid allocations.
 				oldActors.Clear();
 				oldActors.UnionWith(currentActors);
@@ -95,8 +99,6 @@ namespace OpenRA.Mods.Common.Traits
 						if (Removed)
 							return;
 					}
-
-				Dirty = false;
 			}
 		}
 

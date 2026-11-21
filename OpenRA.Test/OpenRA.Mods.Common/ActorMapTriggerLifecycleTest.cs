@@ -142,6 +142,28 @@ namespace OpenRA.Test
 		}
 
 		[Test]
+		public void CellCallbackDirtyRemainsUntilNextTick()
+		{
+			var map = EmptyMap();
+			var exits = 0;
+			var id = -1;
+			id = map.AddCellTrigger([], null, _ =>
+			{
+				exits++;
+
+				// AddInfluence and RemoveInfluence dirty a cell trigger exactly like this.
+				Set(Trigger(map, "cellTriggers", id), "Dirty", true);
+			});
+			AddCurrentActor(Trigger(map, "cellTriggers", id), ActorStub());
+			Tick(map);
+			Assert.That(exits, Is.EqualTo(1));
+			Assert.That((bool)Get(Trigger(map, "cellTriggers", id), "Dirty"), Is.True, "A dirty flag set by a callback must survive the tick.");
+			Tick(map);
+			Assert.That(exits, Is.EqualTo(1));
+			Assert.That((bool)Get(Trigger(map, "cellTriggers", id), "Dirty"), Is.False);
+		}
+
+		[Test]
 		public void RemovedCellBeforeTickNeverFiresAndKeepsNoId()
 		{
 			var map = EmptyMap();
@@ -185,6 +207,9 @@ namespace OpenRA.Test
 				added = map.AddCellTrigger([], null, null);
 			});
 			removed = map.AddCellTrigger([], null, _ => Assert.Fail("Removed trigger fired."));
+
+			// Without a member the removed trigger could never fire, so the guard would go untested.
+			AddCurrentActor(Trigger(map, "cellTriggers", removed), ActorStub());
 			AddCurrentActor(Trigger(map, "cellTriggers", first), ActorStub());
 			Tick(map);
 			Assert.That(((IDictionary)Get(map, "cellTriggers")).Contains(removed), Is.False);
