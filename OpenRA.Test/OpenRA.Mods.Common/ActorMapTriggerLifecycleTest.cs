@@ -23,7 +23,8 @@ namespace OpenRA.Test
 		{
 			var map = (ActorMap)RuntimeHelpers.GetUninitializedObject(typeof(ActorMap));
 			foreach (var name in new[] { "cellTriggers", "cellTriggerInfluence", "proximityTriggers",
-				"cellTriggerSnapshot", "proximityTriggerSnapshot", "addActorPosition", "removeActorPosition" })
+				"cellTriggerOrder", "proximityTriggerOrder", "cellTriggerSnapshot", "proximityTriggerSnapshot",
+				"addActorPosition", "removeActorPosition" })
 				Set(map, name, Activator.CreateInstance(Field(map, name).FieldType));
 
 			Set(map, "info", new ActorMapInfo());
@@ -41,8 +42,104 @@ namespace OpenRA.Test
 
 		static object Trigger(ActorMap map, string field, int id) => ((IDictionary)Get(map, field))[id];
 		static void AddCurrentActor(object trigger, Actor actor) => ((HashSet<Actor>)Get(trigger, "currentActors")).Add(actor);
-		static Actor ActorStub() => (Actor)RuntimeHelpers.GetUninitializedObject(typeof(Actor));
+		sealed class StubSpace : IOccupySpace
+		{
+			public WPos Position;
+			public WPos CenterPosition => Position;
+			public CPos TopLeft => CPos.Zero;
+			public (CPos Cell, SubCell SubCell)[] OccupiedCells() => [];
+		}
+
+		static uint nextActorId = 1;
+		static Actor ActorStub()
+		{
+			var actor = (Actor)RuntimeHelpers.GetUninitializedObject(typeof(Actor));
+			Set(actor, "ActorID", nextActorId++);
+			return actor;
+		}
+
+		static Actor ActorInBin(ActorMap map, WPos position)
+		{
+			var actor = ActorStub();
+			Set(actor, "<OccupiesSpace>k__BackingField", new StubSpace { Position = position });
+			Set(actor, "<IsInWorld>k__BackingField", true);
+			var bin = ((Array)Get(map, "bins")).GetValue(0);
+			((IList)Get(bin, "Actors")).Add(actor);
+			return actor;
+		}
+
 		static void Tick(ActorMap map) => ((ITick)map).Tick(null);
+
+		[Test]
+		public void CellRegistrationOrderSurvivesRemovalAndLaterAddition()
+		{
+			var map = EmptyMap();
+			var order = new List<string>();
+			var a = map.AddCellTrigger([], null, _ => order.Add("A"));
+			var b = map.AddCellTrigger([], null, _ => order.Add("B"));
+			var c = map.AddCellTrigger([], null, _ => order.Add("C"));
+			map.RemoveCellTrigger(b);
+			var d = map.AddCellTrigger([], null, _ => order.Add("D"));
+			foreach (var id in new[] { a, c, d })
+				AddCurrentActor(Trigger(map, "cellTriggers", id), ActorStub());
+			Tick(map);
+			Assert.That(order, Is.EqualTo(new[] { "A", "C", "D" }));
+		}
+
+		[Test]
+		public void ProximityRegistrationOrderSurvivesRemovalAndLaterAddition()
+		{
+			var map = EmptyMap();
+			var order = new List<string>();
+			var a = map.AddProximityTrigger(WPos.Zero, WDist.Zero, WDist.Zero, null, _ => order.Add("A"));
+			var b = map.AddProximityTrigger(WPos.Zero, WDist.Zero, WDist.Zero, null, _ => order.Add("B"));
+			var c = map.AddProximityTrigger(WPos.Zero, WDist.Zero, WDist.Zero, null, _ => order.Add("C"));
+			map.RemoveProximityTrigger(b);
+			var d = map.AddProximityTrigger(WPos.Zero, WDist.Zero, WDist.Zero, null, _ => order.Add("D"));
+			foreach (var id in new[] { a, c, d })
+				AddCurrentActor(Trigger(map, "proximityTriggers", id), ActorStub());
+			Tick(map);
+			Assert.That(order, Is.EqualTo(new[] { "A", "C", "D" }));
+		}
+
+		[Test]
+		public void SelfRemovalExitsOnlyPreviouslyActiveAndNotifiedEntrants()
+		{
+			var map = EmptyMap();
+			var old = ActorStub();
+			var entered = new List<Actor>();
+			var exited = new List<Actor>();
+			var b = ActorInBin(map, WPos.Zero);
+			var c = ActorInBin(map, new WPos(100, 0, 0));
+			var id = -1;
+			id = map.AddProximityTrigger(WPos.Zero, new WDist(1024), WDist.Zero,
+				a => { entered.Add(a); map.RemoveProximityTrigger(id); }, a => exited.Add(a));
+			AddCurrentActor(Trigger(map, "proximityTriggers", id), old);
+			Tick(map);
+			Assert.That(entered, Is.EqualTo(new[] { b }));
+			Assert.That(exited, Is.EquivalentTo(new[] { old, b }));
+			Assert.That(exited, Does.Not.Contain(c));
+			Tick(map);
+			Assert.That(exited.Count, Is.EqualTo(2));
+		}
+
+		[Test]
+		public void LiveSelfUpdateRemainsDirtyUntilNextTick()
+		{
+			var map = EmptyMap();
+			var actor = ActorInBin(map, WPos.Zero);
+			var exits = 0;
+			var id = -1;
+			id = map.AddProximityTrigger(WPos.Zero, new WDist(1024), WDist.Zero,
+				_ => map.UpdateProximityTrigger(id, new WPos(8192, 0, 0), new WDist(1024), WDist.Zero),
+				_ => exits++);
+			Tick(map);
+			Assert.That((bool)Get(Trigger(map, "proximityTriggers", id), "Dirty"), Is.True);
+			Assert.That(((HashSet<Actor>)Get(Trigger(map, "proximityTriggers", id), "currentActors")).Contains(actor), Is.True);
+			Tick(map);
+			Assert.That(exits, Is.EqualTo(1));
+			Assert.That((bool)Get(Trigger(map, "proximityTriggers", id), "Dirty"), Is.False);
+		}
 
 		[Test]
 		public void RemovedCellBeforeTickNeverFiresAndKeepsNoId()

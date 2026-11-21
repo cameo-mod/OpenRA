@@ -112,6 +112,7 @@ namespace OpenRA.Mods.Common.Traits
 			readonly Action<Actor> onActorExited;
 			readonly HashSet<Actor> oldActors = [];
 			readonly HashSet<Actor> currentActors = [];
+			readonly HashSet<Actor> scannedActors = [];
 
 			WPos position;
 			WDist range;
@@ -144,40 +145,45 @@ namespace OpenRA.Mods.Common.Traits
 				if (Removed || !Dirty)
 					return;
 
-				// PERF: Reuse collection to avoid allocations.
+				// Consume the current dirty flag before callbacks: an Update invoked
+				// by a callback sets it again and is processed on the next tick.
+				Dirty = false;
 				oldActors.Clear();
 				oldActors.UnionWith(currentActors);
+				scannedActors.Clear();
+				am.FillProximityActors(scannedActors, position, range, vRange);
 
-				// PERF: Fill directly via a non-allocating inlined scan (no ActorsInBox iterator + no
-				// Where closure) - this is a hot path re-run for every dirtied trigger each tick.
-				// FillProximityActors preserves ActorsInBox's exact iteration order, so the resulting
-				// set's insertion order - and thus the entered/exited callback order - is unchanged.
+				// currentActors is the membership already reported to listeners, not
+				// the whole new scan. If a callback removes this trigger, Dispose
+				// exits exactly the actors that were actually entered and still active.
+				foreach (var a in scannedActors)
+				{
+					if (!oldActors.Contains(a))
+					{
+						currentActors.Add(a);
+						onActorEntered?.Invoke(a);
+					}
+
+					if (Removed)
+						return;
+				}
+
+				foreach (var a in oldActors)
+				{
+					if (!scannedActors.Contains(a))
+					{
+						currentActors.Remove(a);
+						onActorExited?.Invoke(a);
+					}
+
+					if (Removed)
+						return;
+				}
+
+				// Restore the original scan order for future exit callbacks.
 				currentActors.Clear();
-				am.FillProximityActors(currentActors, position, range, vRange);
-
-				if (onActorEntered != null)
-					foreach (var a in currentActors)
-					{
-						if (!oldActors.Contains(a))
-							onActorEntered(a);
-
-						if (Removed)
-							return;
-					}
-
-				if (onActorExited != null)
-					foreach (var a in oldActors)
-					{
-						if (!currentActors.Contains(a))
-							onActorExited(a);
-
-						if (Removed)
-							return;
-					}
-
-				Dirty = false;
+				currentActors.UnionWith(scannedActors);
 			}
-
 			public void Dispose()
 			{
 				if (onActorExited != null)
@@ -191,8 +197,12 @@ namespace OpenRA.Mods.Common.Traits
 		readonly Dictionary<int, CellTrigger> cellTriggers = [];
 		readonly Dictionary<CPos, List<CellTrigger>> cellTriggerInfluence = [];
 		readonly Dictionary<int, ProximityTrigger> proximityTriggers = [];
-		readonly List<KeyValuePair<int, CellTrigger>> cellTriggerSnapshot = [];
-		readonly List<KeyValuePair<int, ProximityTrigger>> proximityTriggerSnapshot = [];
+		// Dictionaries own ID lookup; lists keep registration order even when the
+		// dictionary reuses a removed slot. Snapshots isolate callback mutations.
+		readonly List<CellTrigger> cellTriggerOrder = [];
+		readonly List<ProximityTrigger> proximityTriggerOrder = [];
+		readonly List<CellTrigger> cellTriggerSnapshot = [];
+		readonly List<ProximityTrigger> proximityTriggerSnapshot = [];
 		int nextTriggerId;
 
 		CellLayer<InfluenceNode>[] influence;
@@ -526,23 +536,25 @@ namespace OpenRA.Mods.Common.Traits
 
 			addActorPosition.Clear();
 
-			// Callbacks can add or remove triggers. Snapshot each phase in the existing
-			// dictionary order and skip IDs removed before their turn. A trigger added
-			// during its own phase is visited on the next tick.
+			// Each phase snapshots registration order; callbacks can add or remove
+			// triggers without mutating an active enumerator. New triggers in the
+			// current phase wait for its next tick. Removed entries are skipped.
 			cellTriggerSnapshot.Clear();
-			cellTriggerSnapshot.AddRange(cellTriggers);
+			cellTriggerSnapshot.AddRange(cellTriggerOrder);
 			foreach (var t in cellTriggerSnapshot)
-				if (cellTriggers.TryGetValue(t.Key, out var current) && ReferenceEquals(current, t.Value))
-					current.Tick(this);
+				if (!t.Removed)
+					t.Tick(this);
 
 			cellTriggerSnapshot.Clear();
+			cellTriggerOrder.RemoveAll(t => t.Removed);
 			proximityTriggerSnapshot.Clear();
-			proximityTriggerSnapshot.AddRange(proximityTriggers);
+			proximityTriggerSnapshot.AddRange(proximityTriggerOrder);
 			foreach (var t in proximityTriggerSnapshot)
-				if (proximityTriggers.TryGetValue(t.Key, out var current) && ReferenceEquals(current, t.Value))
-					current.Tick(this);
+				if (!t.Removed)
+					t.Tick(this);
 
 			proximityTriggerSnapshot.Clear();
+			proximityTriggerOrder.RemoveAll(t => t.Removed);
 		}
 
 		public int AddCellTrigger(CPos[] cells, Action<Actor> onEntry, Action<Actor> onExit)
@@ -550,6 +562,7 @@ namespace OpenRA.Mods.Common.Traits
 			var id = nextTriggerId++;
 			var t = new CellTrigger(cells, onEntry, onExit);
 			cellTriggers.Add(id, t);
+			cellTriggerOrder.Add(t);
 
 			var layer = influence[0];
 			foreach (var c in cells)
@@ -592,6 +605,7 @@ namespace OpenRA.Mods.Common.Traits
 			var id = nextTriggerId++;
 			var t = new ProximityTrigger(pos, range, vRange, onEntry, onExit);
 			proximityTriggers.Add(id, t);
+			proximityTriggerOrder.Add(t);
 
 			foreach (var bin in BinsInBox(t.TopLeft, t.BottomRight))
 				bin.ProximityTriggers.Add(t);
