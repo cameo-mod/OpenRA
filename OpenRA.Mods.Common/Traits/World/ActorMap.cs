@@ -183,6 +183,10 @@ namespace OpenRA.Mods.Common.Traits
 		// to ensure consistency during a tick
 		readonly HashSet<Actor> addActorPosition = [];
 		readonly HashSet<Actor> removeActorPosition = [];
+		// An actor can be added more than once before a removal. Track each bin it
+		// occupies, so the next removal still removes every copy like RemoveAll.
+		readonly Dictionary<Actor, List<Bin>> actorBins = [];
+		readonly HashSet<Bin> removalBins = [];
 		readonly Predicate<Actor> actorShouldBeRemoved;
 
 		public WDist LargestActorRadius { get; }
@@ -477,12 +481,33 @@ namespace OpenRA.Mods.Common.Traits
 			// to ensure consistency during a tick
 			if (removeActorPosition.Count > 0)
 			{
-				foreach (var bin in bins)
+				// Dirty flags are boolean and callbacks run only after all bins have
+				// been updated, so bin processing order does not change callback order.
+				removalBins.Clear();
+				foreach (var actor in removeActorPosition)
+					if (actorBins.TryGetValue(actor, out var previousBins))
+						foreach (var bin in previousBins)
+							removalBins.Add(bin);
+
+				foreach (var bin in removalBins)
 				{
 					var removed = bin.Actors.RemoveAll(actorShouldBeRemoved);
 					if (removed > 0)
 						foreach (var t in bin.ProximityTriggers)
 							t.Dirty = true;
+				}
+
+				removalBins.Clear();
+				foreach (var actor in removeActorPosition)
+				{
+					if (!actorBins.TryGetValue(actor, out var previousBins))
+						continue;
+
+					// Retain the small list when this actor is also being re-added.
+					if (addActorPosition.Contains(actor))
+						previousBins.Clear();
+					else
+						actorBins.Remove(actor);
 				}
 
 				removeActorPosition.Clear();
@@ -496,6 +521,12 @@ namespace OpenRA.Mods.Common.Traits
 				var bin = BinAt(row, col);
 
 				bin.Actors.Add(a);
+				if (!actorBins.TryGetValue(a, out var occupiedBins))
+					actorBins.Add(a, occupiedBins = []);
+
+				if (!occupiedBins.Contains(bin))
+					occupiedBins.Add(bin);
+
 				foreach (var t in bin.ProximityTriggers)
 					t.Dirty = true;
 			}
