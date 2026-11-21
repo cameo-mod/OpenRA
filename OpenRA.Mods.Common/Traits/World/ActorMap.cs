@@ -46,6 +46,7 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			public readonly CPos[] Footprint;
 			public bool Dirty;
+			public bool Removed;
 
 			readonly Action<Actor> onActorEntered;
 			readonly Action<Actor> onActorExited;
@@ -65,7 +66,7 @@ namespace OpenRA.Mods.Common.Traits
 
 			public void Tick(ActorMap actorMap)
 			{
-				if (!Dirty)
+				if (Removed || !Dirty)
 					return;
 
 				// PERF: Reuse collection to avoid allocations.
@@ -77,13 +78,23 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (onActorEntered != null)
 					foreach (var a in currentActors)
+					{
 						if (!oldActors.Contains(a))
 							onActorEntered(a);
 
+						if (Removed)
+							return;
+					}
+
 				if (onActorExited != null)
 					foreach (var a in oldActors)
+					{
 						if (!currentActors.Contains(a))
 							onActorExited(a);
+
+						if (Removed)
+							return;
+					}
 
 				Dirty = false;
 			}
@@ -95,6 +106,7 @@ namespace OpenRA.Mods.Common.Traits
 			public WPos BottomRight { get; private set; }
 
 			public bool Dirty;
+			public bool Removed;
 
 			readonly Action<Actor> onActorEntered;
 			readonly Action<Actor> onActorExited;
@@ -129,7 +141,7 @@ namespace OpenRA.Mods.Common.Traits
 
 			public void Tick(ActorMap am)
 			{
-				if (!Dirty)
+				if (Removed || !Dirty)
 					return;
 
 				// PERF: Reuse collection to avoid allocations.
@@ -145,13 +157,23 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (onActorEntered != null)
 					foreach (var a in currentActors)
+					{
 						if (!oldActors.Contains(a))
 							onActorEntered(a);
 
+						if (Removed)
+							return;
+					}
+
 				if (onActorExited != null)
 					foreach (var a in oldActors)
+					{
 						if (!currentActors.Contains(a))
 							onActorExited(a);
+
+						if (Removed)
+							return;
+					}
 
 				Dirty = false;
 			}
@@ -169,6 +191,8 @@ namespace OpenRA.Mods.Common.Traits
 		readonly Dictionary<int, CellTrigger> cellTriggers = [];
 		readonly Dictionary<CPos, List<CellTrigger>> cellTriggerInfluence = [];
 		readonly Dictionary<int, ProximityTrigger> proximityTriggers = [];
+		readonly List<KeyValuePair<int, CellTrigger>> cellTriggerSnapshot = [];
+		readonly List<KeyValuePair<int, ProximityTrigger>> proximityTriggerSnapshot = [];
 		int nextTriggerId;
 
 		CellLayer<InfluenceNode>[] influence;
@@ -502,11 +526,23 @@ namespace OpenRA.Mods.Common.Traits
 
 			addActorPosition.Clear();
 
-			foreach (var t in cellTriggers)
-				t.Value.Tick(this);
+			// Callbacks can add or remove triggers. Snapshot each phase in the existing
+			// dictionary order and skip IDs removed before their turn. A trigger added
+			// during its own phase is visited on the next tick.
+			cellTriggerSnapshot.Clear();
+			cellTriggerSnapshot.AddRange(cellTriggers);
+			foreach (var t in cellTriggerSnapshot)
+				if (cellTriggers.TryGetValue(t.Key, out var current) && ReferenceEquals(current, t.Value))
+					current.Tick(this);
 
-			foreach (var t in proximityTriggers)
-				t.Value.Tick(this);
+			cellTriggerSnapshot.Clear();
+			proximityTriggerSnapshot.Clear();
+			proximityTriggerSnapshot.AddRange(proximityTriggers);
+			foreach (var t in proximityTriggerSnapshot)
+				if (proximityTriggers.TryGetValue(t.Key, out var current) && ReferenceEquals(current, t.Value))
+					current.Tick(this);
+
+			proximityTriggerSnapshot.Clear();
 		}
 
 		public int AddCellTrigger(CPos[] cells, Action<Actor> onEntry, Action<Actor> onExit)
@@ -537,9 +573,11 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void RemoveCellTrigger(int id)
 		{
-			if (!cellTriggers.TryGetValue(id, out var trigger))
+			if (!cellTriggers.Remove(id, out var trigger))
 				return;
 
+			// Cell trigger removal intentionally does not emit exit callbacks.
+			trigger.Removed = true;
 			foreach (var c in trigger.Footprint)
 			{
 				if (!cellTriggerInfluence.ContainsKey(c))
@@ -563,9 +601,11 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void RemoveProximityTrigger(int id)
 		{
-			if (!proximityTriggers.TryGetValue(id, out var t))
+			if (!proximityTriggers.Remove(id, out var t))
 				return;
 
+			// Remove the ID first so reentrant removal from an exit callback is a no-op.
+			t.Removed = true;
 			foreach (var bin in BinsInBox(t.TopLeft, t.BottomRight))
 				bin.ProximityTriggers.Remove(t);
 
